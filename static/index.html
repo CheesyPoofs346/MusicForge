@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0B0812">
+<title>MusicForge — Your studio, your GPU</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --accent:#F59E0B; --accent-2:#F97316; --accent-deep:#B45309;
+  --text:#FAFAF9; --muted:#D6D3D1; --dim:#A8A29E; --danger:#FCA5A5;
+  --radius:1.4rem;
+  /* liquid glass knobs (driven by the liquidity slider) */
+  --blur:22px; --galpha:.10; --gborder:rgba(255,255,255,.28);
+  /* z-scale: 10 header, 30 sticky panel, 40 glass pill, 50 toast */
+}
+*{box-sizing:border-box}
+html{overscroll-behavior:none; scroll-behavior:smooth}
+body{
+  margin:0; background:#0B0812; color:var(--text);
+  font-family:'DM Sans',system-ui,sans-serif; font-size:16px; line-height:1.5;
+  min-height:100vh; touch-action:manipulation; overflow-x:hidden;
+}
+h1,h2{font-family:'Bricolage Grotesque','DM Sans',sans-serif}
+
+/* ---------------- liquid background ---------------- */
+.bg{position:fixed; inset:0; z-index:-2; overflow:hidden; filter:hue-rotate(var(--hue,0deg))}
+.bg i{
+  position:absolute; border-radius:50%; filter:blur(90px); opacity:.75;
+  width:46vmax; height:46vmax;
+}
+/* restrained, editorial palette — ink, ember, wine, brass; no rainbow */
+.bg i:nth-child(1){background:#312E81; top:-12vmax; left:-8vmax; opacity:.55}
+.bg i:nth-child(2){background:#7F1D1D; top:20vmax; right:-14vmax; opacity:.5}
+.bg i:nth-child(3){background:#B45309; bottom:-16vmax; left:22vmax; opacity:.5}
+.bg i:nth-child(4){background:#134E4A; bottom:-6vmax; right:18vmax; width:34vmax; height:34vmax; opacity:.45}
+.bg i:nth-child(5){background:#78350F; top:-8vmax; right:30vmax; width:26vmax; height:26vmax; opacity:.35}
+@media (prefers-reduced-motion:no-preference){
+  .bg i{animation:drift 26s ease-in-out infinite alternate}
+  .bg i:nth-child(2){animation-duration:31s; animation-delay:-8s}
+  .bg i:nth-child(3){animation-duration:37s; animation-delay:-15s}
+  .bg i:nth-child(4){animation-duration:29s; animation-delay:-4s}
+  .bg i:nth-child(5){animation-duration:41s; animation-delay:-20s}
+  @keyframes drift{to{transform:translate(9vmax,6vmax) scale(1.18)}}
+}
+body::before{ /* contrast tint so text on glass stays readable */
+  content:""; position:fixed; inset:0; z-index:-1;
+  background:rgba(9,7,14,.52);
+}
+
+/* ---------------- glass ---------------- */
+.glass{
+  position:relative;
+  background:rgba(255,255,255,var(--galpha));
+  backdrop-filter:blur(var(--blur)) saturate(1.5);
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(1.5);
+  border:1px solid var(--gborder); border-radius:var(--radius);
+  box-shadow:0 12px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.28);
+}
+.glass::after{ /* cursor-tracking glare */
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(18rem circle at var(--mx,50%) var(--my,-20%), rgba(255,255,255,.14), transparent 55%);
+}
+
+header{
+  display:flex; align-items:center; gap:.75rem;
+  max-width:72rem; margin:1rem auto 0; padding:.9rem 1.25rem;
+  position:relative; z-index:10;
+}
+header.glass{max-width:70rem; margin:1rem 1rem 0; border-radius:1.1rem}
+@media (min-width:72rem){ header.glass{margin:1rem auto 0} }
+header .logo{
+  display:grid; place-items:center; width:2.4rem; height:2.4rem; border-radius:.7rem;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1C1200;
+  box-shadow:0 0 26px rgba(245,158,11,.45);
+}
+header h1{font-size:1.35rem; margin:0; letter-spacing:-.02em}
+header span{color:var(--muted); font-size:.9rem; margin-left:auto; display:flex; align-items:center; gap:.5rem}
+.pulse{width:.55rem; height:.55rem; border-radius:50%; background:var(--accent)}
+@media (prefers-reduced-motion:no-preference){
+  .pulse{animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.3}}
+}
+
+/* ---------------- hero ---------------- */
+.hero{max-width:72rem; margin:0 auto; padding:3.2rem 1.5rem 2.2rem; text-align:center}
+.hero .kicker{
+  display:inline-flex; gap:.45rem; align-items:center;
+  font-size:.8rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:#FDE68A; border:1px solid rgba(255,255,255,.3); border-radius:2rem;
+  padding:.45rem 1.1rem; margin-bottom:1.4rem;
+  background:rgba(255,255,255,.08); backdrop-filter:blur(12px);
+}
+.hero h2{
+  font-size:clamp(2.2rem, 6vw, 3.8rem); font-weight:800; letter-spacing:-.03em;
+  line-height:1.05; margin:0 0 1rem; text-shadow:0 2px 24px rgba(0,0,0,.4);
+}
+.hero h2 em{
+  font-style:normal;
+  background:linear-gradient(110deg, #FDE68A 40%, #FFF7E0 50%, var(--accent-2) 60%);
+  background-size:220% 100%;
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+@media (prefers-reduced-motion:no-preference){
+  .hero h2 em{animation:shine 3.2s linear infinite}
+  @keyframes shine{to{background-position:-220% 0}}
+  .hero h2 .w{display:inline-block; animation:blurin .7s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes blurin{from{opacity:0; filter:blur(10px); transform:translateY(.35em)}}
+}
+.hero .sub{color:var(--muted); font-size:1.08rem; max-width:34rem; margin:0 auto 1.8rem}
+.hero .cta{
+  display:inline-flex; align-items:center; gap:.55rem; text-decoration:none;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1C1200;
+  font-weight:700; font-size:1.02rem; border-radius:.9rem; padding:.95rem 1.9rem;
+  min-height:52px; transition:box-shadow .2s, filter .2s;
+  box-shadow:0 6px 32px rgba(245,158,11,.4);
+}
+.hero .cta:hover{filter:brightness(1.07); box-shadow:0 6px 40px rgba(249,115,22,.55)}
+.hero .stats{display:flex; gap:.6rem; justify-content:center; flex-wrap:wrap; margin-top:2rem}
+.hero .stats span{
+  font-size:.8rem; color:var(--muted); border:1px solid rgba(255,255,255,.22);
+  border-radius:2rem; padding:.45rem 1rem; background:rgba(255,255,255,.07);
+  backdrop-filter:blur(10px);
+}
+.hero .strip{
+  display:flex; gap:4px; align-items:flex-end; height:44px; justify-content:center;
+  margin:0 auto 1.6rem; max-width:26rem; opacity:.95;
+}
+.hero .strip i{width:5px; border-radius:3px; background:linear-gradient(180deg, #FDE68A, var(--accent-2))}
+@media (prefers-reduced-motion:no-preference){ .hero .strip i{animation:eq 1.4s ease-in-out infinite} }
+@media (prefers-reduced-motion:reduce){ .hero .strip i{height:55%} }
+
+main{
+  max-width:72rem; margin:0 auto; padding:1.5rem;
+  display:grid; grid-template-columns:minmax(20rem,26rem) 1fr; gap:2rem; align-items:start;
+}
+@media (max-width:840px){
+  main{grid-template-columns:1fr; padding:1rem}
+  .chip{min-height:44px; padding:.6rem 1.1rem}
+  .hero{padding-top:2.2rem}
+}
+
+.panel{padding:1.5rem}
+@media (min-width:841px){ .panel{position:sticky; top:1.25rem; z-index:30} }
+.panel h2{margin:0 0 1rem; font-size:1.15rem; letter-spacing:-.01em}
+label{display:block; font-size:.85rem; color:var(--muted); margin:0 0 .4rem; font-weight:500}
+textarea{
+  width:100%; min-height:6.5rem; resize:vertical;
+  background:rgba(0,0,0,.32); color:var(--text); border:1px solid rgba(255,255,255,.22);
+  border-radius:.8rem; padding:.75rem; font:inherit; font-size:.95rem;
+  transition:border-color .2s; backdrop-filter:blur(8px);
+}
+textarea::placeholder{color:rgba(250,250,249,.45)}
+textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
+.chips{display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1.25rem}
+.chip{
+  background:rgba(255,255,255,.08); color:var(--muted); border:1px solid rgba(255,255,255,.24);
+  border-radius:2rem; padding:.5rem 1rem; font:inherit; font-size:.85rem;
+  cursor:pointer; transition:color .2s, background .2s, border-color .2s, box-shadow .2s;
+  min-height:40px; backdrop-filter:blur(8px);
+}
+.chip:hover{color:var(--text); border-color:rgba(255,255,255,.5)}
+.chip[aria-pressed="true"]{
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color:transparent; color:#1C1200; font-weight:700;
+  box-shadow:0 0 18px rgba(245,158,11,.4);
+}
+.seg{
+  display:grid; grid-template-columns:1fr 1fr; background:rgba(0,0,0,.3);
+  border:1px solid rgba(255,255,255,.22); border-radius:.8rem; padding:.25rem;
+  margin-bottom:1.25rem; gap:.25rem;
+}
+.seg button{
+  background:transparent; color:var(--muted); border:0; border-radius:.6rem;
+  padding:.6rem; font:inherit; font-size:.9rem; font-weight:500; cursor:pointer;
+  transition:background .2s, color .2s; min-height:44px;
+}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.14); color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.seg small{display:block; font-size:.7rem; font-weight:400; opacity:.75}
+.generate{
+  width:100%; background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1C1200;
+  border:0; border-radius:.9rem; padding:.95rem; font:inherit; font-size:1rem;
+  font-weight:700; cursor:pointer; min-height:52px;
+  display:flex; align-items:center; justify-content:center; gap:.5rem;
+  transition:box-shadow .2s, filter .2s; box-shadow:0 4px 26px rgba(245,158,11,.35);
+}
+.generate:hover{filter:brightness(1.07); box-shadow:0 4px 34px rgba(249,115,22,.5)}
+.generate:disabled{opacity:.6; cursor:default; filter:none}
+.generate:focus-visible,.chip:focus-visible,.seg button:focus-visible,.hero .cta:focus-visible,
+.play:focus-visible,.actions a:focus-visible,.actions button:focus-visible,
+.pro summary:focus-visible,.pill input:focus-visible,.pill button:focus-visible{
+  outline:2px solid #FDE68A; outline-offset:2px;
+}
+.hint{font-size:.8rem; color:var(--dim); margin-top:.75rem}
+.pro{margin-bottom:1.25rem}
+.pro summary{font-size:.85rem; color:var(--muted); cursor:pointer; padding:.5rem 0; transition:color .2s; list-style-position:inside}
+.pro summary:hover{color:var(--text)}
+.pro input[type=file]{
+  width:100%; color:var(--muted); font-size:.83rem;
+  background:rgba(0,0,0,.3); border:1px solid rgba(255,255,255,.22);
+  border-radius:.8rem; padding:.6rem; cursor:pointer;
+}
+.pro input[type=file]::file-selector-button{
+  background:rgba(255,255,255,.14); color:var(--text); border:1px solid rgba(255,255,255,.25);
+  border-radius:.5rem; padding:.45rem .8rem; margin-right:.7rem; font:inherit; font-size:.8rem; cursor:pointer;
+}
+
+.tracks{display:flex; flex-direction:column; gap:1rem; min-height:12rem}
+.track{padding:1.1rem 1.25rem; transition:border-color .25s, box-shadow .25s}
+.track:hover{border-color:rgba(255,255,255,.45)}
+@media (prefers-reduced-motion:no-preference){
+  .track{animation:rise .35s ease both}
+  @keyframes rise{from{opacity:0; transform:translateY(8px)}}
+}
+.track .top{display:flex; align-items:flex-start; gap:.75rem; margin-bottom:.4rem}
+.track h3{margin:0; font-size:1.02rem; font-weight:700; flex:1; letter-spacing:-.01em}
+.track .sub{font-size:.82rem; color:var(--dim); margin:0 0 .2rem; word-break:break-word}
+.badges{display:flex; gap:.4rem; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end}
+.badge{
+  display:inline-flex; align-items:center; gap:.35rem;
+  font-size:.74rem; font-weight:500; letter-spacing:.01em;
+  padding:.24rem .7rem; border-radius:.5rem;
+  background:rgba(255,255,255,.07); color:var(--muted);
+  border:1px solid rgba(255,255,255,.14);
+}
+.badge::before{content:""; width:.42rem; height:.42rem; border-radius:50%; background:var(--dot,#A8A29E)}
+.badge.vocal{--dot:#FB923C; color:#FED7AA}
+.badge.gen{--dot:#FDE68A; color:#FDE68A}
+.badge.gen::before{animation:pulse 1.2s ease-in-out infinite}
+.badge.fail{--dot:#FCA5A5; color:var(--danger)}
+
+.player{display:flex; align-items:center; gap:.9rem; margin-top:.75rem}
+.play{
+  flex-shrink:0; width:54px; height:54px; border-radius:38%; border:0; cursor:pointer;
+  background:linear-gradient(145deg, #FDE68A, var(--accent) 45%, var(--accent-2)); color:#1C1200;
+  display:grid; place-items:center; position:relative;
+  transition:filter .2s, border-radius .35s;
+  box-shadow:0 4px 18px rgba(245,158,11,.35), inset 0 1.5px 0 rgba(255,255,255,.55), inset 0 -2px 4px rgba(120,53,15,.35);
+}
+.play:hover{filter:brightness(1.06); border-radius:50%}
+.play svg{filter:drop-shadow(0 1px 0 rgba(255,255,255,.35))}
+/* width:0 + flex-grow: the canvas's own pixel size must never dictate layout,
+   or it feeds back into itself and pushes the card off screen */
+.wave{flex:1 1 0; width:0; min-width:0; height:56px; cursor:pointer; touch-action:none; border-radius:.4rem}
+.player{min-width:0}
+.time{flex-shrink:0; font-size:.78rem; color:var(--dim); font-variant-numeric:tabular-nums; min-width:5.2rem; text-align:right}
+
+.genwrap{margin-top:.9rem}
+.bars{display:flex; gap:3px; align-items:flex-end; height:32px}
+.bars i{width:4px; background:linear-gradient(180deg, #FDE68A, var(--accent-2)); border-radius:2px}
+@media (prefers-reduced-motion:no-preference){ .bars i{animation:eq 1s ease-in-out infinite} }
+@keyframes eq{0%,100%{height:20%}50%{height:100%}}
+@media (prefers-reduced-motion:reduce){ .bars i{height:60%} }
+.genlabel{font-size:.82rem; color:var(--muted); margin-top:.5rem; display:flex; gap:.4rem; align-items:center}
+.genlabel .elapsed{color:#FDE68A; font-variant-numeric:tabular-nums}
+
+.actions{display:flex; gap:.5rem; margin-top:.9rem; flex-wrap:wrap}
+.actions a,.actions button{
+  display:inline-flex; align-items:center; gap:.4rem;
+  background:rgba(255,255,255,.08); color:var(--muted); border:1px solid rgba(255,255,255,.24);
+  border-radius:.7rem; padding:.55rem .9rem; font:inherit; font-size:.83rem;
+  cursor:pointer; text-decoration:none; transition:color .2s, border-color .2s, background .2s;
+  min-height:44px;
+}
+.actions a:hover,.actions button:hover{color:var(--text); border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.14)}
+.actions .del:hover{color:var(--danger); border-color:var(--danger)}
+.lyrics{
+  display:none; white-space:pre-wrap; background:rgba(0,0,0,.35); border-radius:.8rem;
+  padding:1rem; margin-top:.8rem; font-size:.88rem; color:var(--muted); max-height:16rem; overflow:auto;
+  border:1px solid rgba(255,255,255,.15);
+}
+.lyrics.open{display:block}
+.error{color:var(--danger); font-size:.85rem; margin-top:.6rem}
+.empty{
+  color:var(--muted); text-align:center; padding:3.5rem 1rem;
+  border:1px dashed rgba(255,255,255,.35); border-radius:var(--radius);
+  background:rgba(255,255,255,.05); backdrop-filter:blur(8px);
+}
+.empty svg{opacity:.6; margin-bottom:.75rem}
+.empty p{margin:.25rem 0}
+.toast{
+  position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%); z-index:50;
+  background:rgba(30,25,40,.75); backdrop-filter:blur(16px); color:var(--text);
+  padding:.75rem 1.25rem; border-radius:.8rem;
+  border:1px solid rgba(255,255,255,.3); box-shadow:0 8px 32px rgba(0,0,0,.5);
+  font-size:.9rem; opacity:0; pointer-events:none; transition:opacity .25s, transform .25s;
+  max-width:90vw;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(-4px)}
+footer{max-width:72rem; margin:0 auto; padding:2rem 1.5rem 6.5rem; color:var(--dim); font-size:.8rem; text-align:center}
+
+/* ---------------- settings menu ---------------- */
+.gear{
+  display:grid; place-items:center; width:40px; height:40px; border-radius:50%;
+  background:rgba(255,255,255,.12); color:var(--text); border:1px solid rgba(255,255,255,.3);
+  cursor:pointer; transition:background .2s, transform .4s;
+}
+.gear:hover{background:rgba(255,255,255,.22); transform:rotate(60deg)}
+.gear:focus-visible{outline:2px solid #FDE68A; outline-offset:2px}
+.menu{
+  position:absolute; top:calc(100% + .6rem); right:0; z-index:45;
+  width:16rem; padding:1.1rem; display:none; border-radius:1.1rem;
+}
+.menu.open{display:block}
+.menu h3{margin:0 0 .8rem; font-size:.85rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted)}
+.menu label{font-size:.8rem}
+.menu input[type=range]{width:100%; accent-color:var(--accent); cursor:pointer; min-height:24px}
+.menu .row{display:flex; gap:.5rem; align-items:center; margin-top:.9rem; flex-wrap:wrap}
+.menu .row button{
+  flex:1; min-height:38px; border-radius:.6rem; font:inherit; font-size:.8rem; cursor:pointer;
+  background:rgba(255,255,255,.12); color:var(--text); border:1px solid rgba(255,255,255,.3);
+  transition:background .2s;
+}
+.menu .row button:hover{background:rgba(255,255,255,.22)}
+.vibes{display:flex; gap:.5rem; margin-top:.9rem}
+.vibe{
+  width:34px; height:34px; border-radius:50%; border:2px solid rgba(255,255,255,.4);
+  cursor:pointer; transition:transform .2s, border-color .2s;
+}
+.vibe:hover{transform:scale(1.12); border-color:#fff}
+.vibe:focus-visible{outline:2px solid #FDE68A; outline-offset:2px}
+
+/* ---------------- fun bits ---------------- */
+.dice{
+  display:inline-grid; place-items:center; width:30px; height:30px; margin-left:.45rem;
+  vertical-align:middle; border-radius:.5rem; cursor:pointer;
+  background:rgba(255,255,255,.12); color:var(--text); border:1px solid rgba(255,255,255,.3);
+  transition:background .2s, transform .2s;
+}
+.dice:hover{background:rgba(255,255,255,.25); transform:rotate(-12deg)}
+.dice:focus-visible{outline:2px solid #FDE68A; outline-offset:2px}
+.art{
+  width:44px; height:44px; border-radius:.7rem; flex-shrink:0;
+  border:1px solid rgba(255,255,255,.3); box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
+}
+#confetti{position:fixed; inset:0; pointer-events:none; z-index:60}
+
+/* themed scrollbar — the default grey bar fights the glass look */
+::-webkit-scrollbar{width:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.18); border-radius:5px;
+  border:2px solid transparent; background-clip:padding-box;
+}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.32); background-clip:padding-box; border:2px solid transparent}
+html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
+</style>
+</head>
+<body>
+<div class="bg" id="bg" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+
+<header class="glass">
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M3 12h2M7 8v8M11 4v16M15 7v10M19 10v4"/>
+    </svg>
+  </div>
+  <h1>MusicForge</h1>
+  <span id="queue-status"></span>
+  <button type="button" class="gear" id="gear" aria-label="Settings" aria-expanded="false">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h.01a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+  </button>
+  <div class="menu glass" id="menu" role="group" aria-label="Settings">
+    <h3>Glass playground</h3>
+    <label for="liq">Liquidity</label>
+    <input type="range" id="liq" min="0" max="100" value="50" aria-label="Glass liquidity">
+    <div class="vibes" role="group" aria-label="Color vibe">
+      <button type="button" class="vibe" data-hue="0" style="background:linear-gradient(135deg,#FF3D81,#F97316)" aria-label="Sunset vibe"></button>
+      <button type="button" class="vibe" data-hue="150" style="background:linear-gradient(135deg,#06B6D4,#84CC16)" aria-label="Ocean vibe"></button>
+      <button type="button" class="vibe" data-hue="250" style="background:linear-gradient(135deg,#7C3AED,#06B6D4)" aria-label="Neon vibe"></button>
+      <button type="button" class="vibe" data-hue="45" style="background:linear-gradient(135deg,#F59E0B,#FF3D81)" aria-label="Candy vibe"></button>
+    </div>
+    <div class="row">
+      <button type="button" id="shuffle">Shuffle colors</button>
+    </div>
+  </div>
+</header>
+
+<section class="hero" aria-label="About MusicForge">
+  <p class="kicker">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+    100% local &middot; your GPU &middot; your own model
+  </p>
+  <div class="strip" aria-hidden="true"></div>
+  <h2>Make <em>real songs</em>,<br>on your own machine.</h2>
+  <p class="sub">Full lyrics, sung vocals, stem-mixed and mastered at 48kHz — powered by a model fine-tuned on this very PC. No cloud, no credits, no limits.</p>
+  <a class="cta" href="#create-h">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+    Start creating
+  </a>
+  <div class="stats">
+    <span>Sung lyrics — yours or auto-written</span>
+    <span>Style reference from any track</span>
+    <span>Stem-level mix &amp; master</span>
+    <span>Trainable on your own audio</span>
+  </div>
+</section>
+
+<main>
+  <section class="panel glass" aria-labelledby="create-h">
+    <h2 id="create-h">Create a track</h2>
+    <label for="prompt">Describe your track
+      <button type="button" class="dice" id="dice" aria-label="Surprise me with a random prompt" title="Surprise me">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+      </button>
+    </label>
+    <textarea id="prompt" maxlength="500" placeholder="A hard-hitting rap anthem with live brass stabs, pounding drums and a chorus the whole crowd yells back..."></textarea>
+    <label style="margin-top:1.25rem">Genre</label>
+    <div class="chips" id="genres" role="group" aria-label="Genre"></div>
+    <label>Mode</label>
+    <div class="seg" role="group" aria-label="Mode">
+      <button type="button" id="mode-inst" aria-pressed="true">Instrumental<small>beats &amp; melodies</small></button>
+      <button type="button" id="mode-vocal" aria-pressed="false">Vocal<small>lyrics, actually sung</small></button>
+    </div>
+    <details class="pro">
+      <summary>Pro options — your lyrics &amp; style reference</summary>
+      <label for="lyrics" style="margin-top:.75rem">Custom lyrics (sung as written)</label>
+      <textarea id="lyrics" maxlength="5000" style="min-height:5rem" placeholder="[verse]&#10;Your words here...&#10;[chorus]&#10;..."></textarea>
+      <label for="ref" style="margin-top:.9rem">Style reference track</label>
+      <input type="file" id="ref" accept="audio/*">
+      <p class="hint" style="margin-top:.4rem">The generation is steered toward the reference's sound.</p>
+      <label style="margin-top:.9rem; display:flex; align-items:center; gap:.55rem; cursor:pointer">
+        <input type="checkbox" id="director" style="width:1.1rem; height:1.1rem; accent-color:var(--accent); cursor:pointer">
+        Director's cut — 3 takes, keep the best <span style="color:var(--dim)">(3&times; slower)</span>
+      </label>
+    </details>
+    <button class="generate" id="go">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+      Generate 60s track
+    </button>
+    <p class="hint">Prompts are auto-arranged section by section; every track is stem-mixed and mastered.</p>
+  </section>
+  <section class="tracks" id="tracks" aria-label="Your tracks" aria-live="polite"></section>
+</main>
+<footer>Forged locally &middot; trained on Creative Commons music &middot; tuned against the charts</footer>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const GENRES = ["Hip Hop","Trap","R&B","Pop","Rock","Funk","Soul","Electronic","Synthwave","Lo-fi","Jazz","Latin","Folk","Country","Metal","Ambient","Classical","Cinematic"];
+let genre = "Hip Hop", mode = "instrumental";
+
+// when opened as a file (no http origin), talk to the local server directly
+const API = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8137";
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const title = p => { const t = p.split(/\s+/).slice(0, 7).join(" "); return (t[0].toUpperCase() + t.slice(1)) + (p.split(/\s+/).length > 7 ? "…" : ""); };
+const fmt = s => isFinite(s) ? `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}` : "0:00";
+
+// ---------------- settings menu ----------------
+$("#gear").addEventListener("click", e => {
+  e.stopPropagation();
+  const open = $("#menu").classList.toggle("open");
+  $("#gear").setAttribute("aria-expanded", open);
+});
+addEventListener("click", e => {
+  if (!e.target.closest("#menu") && !e.target.closest("#gear")) {
+    $("#menu").classList.remove("open");
+    $("#gear").setAttribute("aria-expanded", "false");
+  }
+});
+// liquidity: one slider drives blur + transparency of every glass surface
+$("#liq").addEventListener("input", e => {
+  const t = e.target.value / 100;
+  document.documentElement.style.setProperty("--blur", `${8 + t * 34}px`);
+  document.documentElement.style.setProperty("--galpha", (0.16 - t * 0.10).toFixed(3));
+  document.documentElement.style.setProperty("--gborder", `rgba(255,255,255,${(0.2 + t * 0.18).toFixed(3)})`);
+});
+// background color shuffle + vibe presets
+$("#shuffle").addEventListener("click", () => {
+  $("#bg").style.setProperty("--hue", Math.floor(Math.random() * 360) + "deg");
+  if (navigator.vibrate) navigator.vibrate(8);
+});
+document.querySelectorAll(".vibe").forEach(v => v.addEventListener("click", () => {
+  $("#bg").style.setProperty("--hue", v.dataset.hue + "deg");
+}));
+
+// ---------------- fun: dice, placeholders, confetti ----------------
+const IDEAS = [
+  "villain anthem with orchestral hits over drill drums, whispered verses exploding into a shouted chorus",
+  "sunset drive song with talkbox hooks, slap bass and lazy falsetto harmonies",
+  "underdog boxing-movie rap with triumphant horns, sped-up soul sample and crowd chants",
+  "cosmic funk odyssey about dancing on Saturn's rings, wah guitar and vocoder choir",
+  "heartbreak R&B at 3am with rain sounds, sparse keys and a falsetto that cracks on purpose",
+  "pirate-tavern folk-punk singalong with accordion, stomps and gang vocals",
+  "cyberpunk phonk chase scene with cowbells, distorted 808s and detuned sirens",
+  "gospel-trap redemption song, church organ under hard drums, choir answering every bar",
+  "beach-party latin pop with brass stabs, güira groove and a chorus in call-and-response",
+  "arena rock finale about the last night on tour, twin guitar leads and a stadium clap break",
+];
+$("#dice").addEventListener("click", () => {
+  $("#prompt").value = IDEAS[Math.floor(Math.random() * IDEAS.length)];
+  $("#prompt").focus();
+  if (navigator.vibrate) navigator.vibrate(8);
+});
+const PLACEHOLDERS = [
+  "A hard-hitting rap anthem with live brass stabs, pounding drums and a chorus the whole crowd yells back...",
+  "A dreamy bedroom-pop song about texting someone you shouldn't...",
+  "A festival drop that makes 40,000 people lose their minds...",
+  "A smoky jazz number for a detective who already knows who did it...",
+];
+let phi = 0;
+setInterval(() => {
+  if (document.activeElement !== $("#prompt")) $("#prompt").placeholder = PLACEHOLDERS[++phi % PLACEHOLDERS.length];
+}, 5000);
+
+function confetti(){
+  if (reduceMotion) return;
+  const cv = $("#confetti"), ctx = cv.getContext("2d");
+  cv.width = innerWidth; cv.height = innerHeight;
+  const colors = ["#FDE68A", "#F97316", "#FF3D81", "#7C3AED", "#06B6D4", "#FAFAF9"];
+  const parts = Array.from({length: 90}, () => ({
+    x: innerWidth / 2 + (Math.random() - .5) * 200, y: innerHeight * .35,
+    vx: (Math.random() - .5) * 14, vy: -6 - Math.random() * 9,
+    s: 4 + Math.random() * 5, c: colors[Math.random() * colors.length | 0],
+    r: Math.random() * Math.PI, vr: (Math.random() - .5) * .3,
+  }));
+  const t0 = performance.now();
+  (function tick(now){
+    const dt = (now - t0) / 1000;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    if (dt > 1.6) return;
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.vy += .35; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+      ctx.globalAlpha = Math.max(0, 1 - dt / 1.6);
+      ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6);
+      ctx.restore();
+    }
+    requestAnimationFrame(tick);
+  })(t0);
+}
+// cursor-tracking glare on glass surfaces
+addEventListener("pointermove", e => {
+  const g = e.target.closest && e.target.closest(".glass");
+  if (!g) return;
+  const r = g.getBoundingClientRect();
+  g.style.setProperty("--mx", `${((e.clientX - r.left) / r.width * 100).toFixed(1)}%`);
+  g.style.setProperty("--my", `${((e.clientY - r.top) / r.height * 100).toFixed(1)}%`);
+}, {passive: true});
+
+// staggered blur-in on the hero headline (react-bits SplitText pattern)
+(() => {
+  const h = document.querySelector(".hero h2");
+  let i = 0;
+  const wrap = node => {
+    [...node.childNodes].forEach(n => {
+      if (n.nodeType === 3 && n.textContent.trim()) {
+        const frag = document.createDocumentFragment();
+        n.textContent.split(/(\s+)/).forEach(w => {
+          if (!w.trim()) return frag.append(w);
+          const s = document.createElement("span");
+          s.className = "w"; s.textContent = w;
+          s.style.animationDelay = `${(i++) * 90}ms`;
+          frag.append(s);
+        });
+        n.replaceWith(frag);
+      } else if (n.nodeType === 1 && n.tagName === "EM") {
+        // gradient-clipped text can't be word-split (children lose the painted
+        // background and turn invisible) — animate the whole em as one unit
+        n.classList.add("w");
+        n.style.animationDelay = `${(i++) * 90}ms`;
+      } else if (n.nodeType === 1 && n.tagName !== "BR") wrap(n);
+    });
+  };
+  wrap(h);
+})();
+
+// magnetic pull on small round buttons (react-bits Magnet pattern)
+document.querySelectorAll(".gear, .dice, .hero .cta").forEach(el => {
+  el.addEventListener("pointermove", e => {
+    const r = el.getBoundingClientRect();
+    el.style.transform = `translate(${(e.clientX - r.left - r.width / 2) * .25}px, ${(e.clientY - r.top - r.height / 2) * .25}px)`;
+  });
+  el.addEventListener("pointerleave", () => { el.style.transform = ""; });
+});
+
+// hero equalizer strip
+$(".hero .strip").innerHTML = Array.from({length: 32}, (_, i) =>
+  `<i style="animation-delay:${(i * .09).toFixed(2)}s; height:${20 + Math.abs(Math.sin(i * 1.7)) * 70}%"></i>`).join("");
+
+$("#genres").innerHTML = GENRES.map(g =>
+  `<button type="button" class="chip" aria-pressed="${g===genre}" data-g="${g}">${g}</button>`).join("");
+$("#genres").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  genre = b.dataset.g;
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b));
+});
+
+for (const [id, m] of [["#mode-inst","instrumental"],["#mode-vocal","vocal"]]) {
+  $(id).addEventListener("click", () => {
+    mode = m;
+    $("#mode-inst").setAttribute("aria-pressed", m === "instrumental");
+    $("#mode-vocal").setAttribute("aria-pressed", m === "vocal");
+  });
+}
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+$("#go").addEventListener("click", async () => {
+  const prompt = $("#prompt").value.trim();
+  if (!prompt) { toast("Describe your track first"); $("#prompt").focus(); return; }
+  if (navigator.vibrate) navigator.vibrate(10);
+  $("#go").disabled = true;
+  try {
+    let ref_id = "";
+    const refFile = $("#ref").files[0];
+    if (refFile) {
+      const fd = new FormData(); fd.append("file", refFile);
+      const up = await fetch(API + "/api/reference", {method:"POST", body:fd});
+      if (!up.ok) throw new Error("reference upload failed");
+      ref_id = (await up.json()).id;
+    }
+    const r = await fetch(API + "/api/generate", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({prompt, genre, mode, lyrics: $("#lyrics").value, ref_id, takes: $("#director").checked ? 3 : 1}),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    toast("Queued — generating on your GPU");
+    refresh();
+  } catch (e) { toast("Error: " + e.message); }
+  $("#go").disabled = false;
+});
+
+// ---------------- audio-reactive glow ----------------
+let actx = null;
+const analysers = new WeakMap();
+function analyserFor(audio){
+  actx ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (!analysers.has(audio)) {
+    const src = actx.createMediaElementSource(audio);
+    const an = actx.createAnalyser();
+    an.fftSize = 256;
+    src.connect(an); an.connect(actx.destination);
+    analysers.set(audio, an);
+  }
+  return analysers.get(audio);
+}
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function pulse(audio, btn, card){
+  if (reduceMotion) return;
+  const an = analyserFor(audio);
+  const buf = new Uint8Array(an.frequencyBinCount);
+  (function loop(){
+    if (audio.paused) { btn.style.boxShadow = ""; card.style.boxShadow = ""; return; }
+    an.getByteFrequencyData(buf);
+    let sum = 0; for (const v of buf) sum += v;
+    const level = sum / buf.length / 255;
+    btn.style.boxShadow = `0 0 ${8 + level * 46}px rgba(245,158,11,${0.35 + level * 0.5})`;
+    card.style.boxShadow = `0 12px 40px rgba(0,0,0,.35), 0 0 ${level * 60}px rgba(249,115,22,${level * 0.25}), inset 0 1px 0 rgba(255,255,255,.28)`;
+    requestAnimationFrame(loop);
+  })();
+}
+
+// ---------------- waveform player ----------------
+const peaksCache = {};
+let currentAudio = null;
+
+async function initPlayer(card){
+  const id = card.dataset.id;
+  const canvas = card.querySelector(".wave");
+  const audio = card.querySelector("audio");
+  const btn = card.querySelector(".play");
+  const timeEl = card.querySelector(".time");
+  if (!canvas) return;
+
+  peaksCache[id] ||= fetch(`${API}/api/tracks/${id}/peaks`).then(r => r.json());
+  const {peaks, duration} = await peaksCache[id];
+  timeEl.textContent = `0:00 / ${fmt(duration)}`;
+
+  const dpr = devicePixelRatio || 1;
+  const draw = () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const n = peaks.length, bw = w / n, played = (audio.currentTime || 0) / duration * n;
+    for (let i = 0; i < n; i++) {
+      const bh = Math.max(2, peaks[i] * (h - 4));
+      ctx.fillStyle = i < played ? "#FDE68A" : "rgba(255,255,255,.4)";
+      ctx.beginPath();
+      ctx.roundRect(i * bw + bw * 0.15, (h - bh) / 2, bw * 0.7, bh, 1.5);
+      ctx.fill();
+    }
+  };
+  draw();
+  new ResizeObserver(draw).observe(canvas);
+
+  const icons = {
+    play: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>',
+  };
+  const setIcon = playing => { btn.innerHTML = icons[playing ? "pause" : "play"]; btn.setAttribute("aria-label", playing ? "Pause" : "Play"); };
+
+  btn.addEventListener("click", () => {
+    if (audio.paused) {
+      if (currentAudio && currentAudio !== audio) currentAudio.pause();
+      currentAudio = audio;
+      if (actx && actx.state === "suspended") actx.resume();
+      audio.play();
+    } else audio.pause();
+  });
+  audio.addEventListener("play", () => { setIcon(true); pulse(audio, btn, card); });
+  audio.addEventListener("pause", () => setIcon(false));
+  audio.addEventListener("timeupdate", () => { timeEl.textContent = `${fmt(audio.currentTime)} / ${fmt(duration)}`; draw(); });
+  audio.addEventListener("ended", () => { audio.currentTime = 0; draw(); });
+
+  const seek = e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    audio.currentTime = Math.max(0, Math.min(1, x / rect.width)) * duration;
+    draw();
+  };
+  canvas.addEventListener("pointerdown", e => {
+    seek(e);
+    const move = ev => seek(ev), up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  });
+}
+
+// ---------------- track list ----------------
+function trackCard(t){
+  const busy = t.status === "queued" || t.status === "generating";
+  const badge = t.status === "failed" ? `<span class="badge fail">Failed</span>`
+    : busy ? `<span class="badge gen">${t.status}</span>` : "";
+  const eq = '<i style="animation-delay:' + [0,.15,.3,.45,.6,.75,.9,1.05,1.2,1.35].join('s"></i><i style="animation-delay:') + 's"></i>';
+  // unique cover art from the track id
+  const h = [...t.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+  const art = `background:conic-gradient(from ${h}deg, hsl(${h},85%,60%), hsl(${(h+80)%360},80%,55%), hsl(${(h+200)%360},85%,60%), hsl(${h},85%,60%))`;
+  return `<article class="track glass" data-id="${t.id}" data-created="${t.created}">
+    <div class="top">
+      <div class="art" style="${art}" aria-hidden="true"></div>
+      <div style="flex:1;min-width:0">
+        <h3>${esc(t.title || title(t.prompt))}</h3>
+        <p class="sub">${esc(t.prompt)}</p>
+      </div>
+      <div class="badges">
+        <span class="badge">${esc(t.genre)}</span>
+        <span class="badge ${t.mode==='vocal'?'vocal':''}">${t.mode}</span>
+        ${badge}
+      </div>
+    </div>
+    ${busy ? `<div class="genwrap"><div class="bars" aria-hidden="true">${eq}</div>
+      <p class="genlabel">${t.mode === "vocal" ? "Writing lyrics, then singing them" : "Composing"} on your GPU
+      <span class="elapsed"></span></p></div>` : ""}
+    ${t.status === "done" ? `
+      <div class="player">
+        <button type="button" class="play" aria-label="Play">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <canvas class="wave" aria-label="Waveform — tap to seek"></canvas>
+        <span class="time">–:–– / –:––</span>
+        <audio preload="none" crossorigin="anonymous" src="${API}/api/tracks/${t.id}/audio"></audio>
+      </div>
+      <div class="actions">
+        <a href="${API}/api/tracks/${t.id}/audio?download=1">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>Download</a>
+        <button type="button" data-share="${t.id}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13"/></svg>Share</button>
+        ${t.lyrics ? `<button type="button" data-lyrics="${t.id}" aria-expanded="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6zM18 19a3 3 0 100-6 3 3 0 000 6z"/></svg>Lyrics</button>` : ""}
+        <button type="button" class="del" data-del="${t.id}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/></svg>Delete</button>
+      </div>
+      ${t.lyrics ? `<pre class="lyrics" id="ly-${t.id}">${esc(t.lyrics)}</pre>` : ""}` : ""}
+    ${t.status === "failed" ? `<p class="error">${esc(t.error || "Generation failed")}</p>` : ""}
+  </article>`;
+}
+
+let tracksCache = "";
+const knownStatus = {};
+async function refresh(){
+  let list;
+  try { list = await (await fetch(API + "/api/tracks")).json(); } catch { return schedule(true); }
+  // celebrate freshly finished tracks
+  for (const t of list) {
+    const prev = knownStatus[t.id];
+    if (prev && prev !== "done" && t.status === "done") {
+      confetti();
+      toast("Track ready — hit play");
+    } else if (prev && prev !== "failed" && t.status === "failed") {
+      toast("Yo — that track failed. Run it again.");
+      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+    }
+    knownStatus[t.id] = t.status;
+  }
+  const json = JSON.stringify(list);
+  if (json !== tracksCache) {
+    tracksCache = json;
+    $("#tracks").innerHTML = list.length ? list.map(trackCard).join("") :
+      `<div class="empty">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6zM18 19a3 3 0 100-6 3 3 0 000 6z"/></svg>
+        <p><strong>No tracks yet</strong></p><p>Describe one and hit Generate — even a rough idea works.</p></div>`;
+    document.querySelectorAll(".track").forEach(initPlayer);
+  }
+  const busy = list.filter(t => t.status === "queued" || t.status === "generating").length;
+  $("#queue-status").innerHTML = busy ? `<span class="pulse" aria-hidden="true"></span>${busy} generating` : "";
+  schedule(busy > 0);
+}
+function schedule(busy){ clearTimeout(refresh._t); refresh._t = setTimeout(refresh, busy ? 3000 : 10000); }
+
+setInterval(() => {
+  document.querySelectorAll(".track .elapsed").forEach(el => {
+    const created = +el.closest(".track").dataset.created;
+    el.textContent = `· ${Math.max(0, Math.round(Date.now()/1000 - created))}s`;
+  });
+}, 1000);
+
+$("#tracks").addEventListener("click", async e => {
+  const b = e.target.closest("[data-share],[data-lyrics],[data-del]");
+  if (!b) return;
+  if (b.dataset.share) {
+    const url = `${API || location.origin}/share/${b.dataset.share}`;
+    if (navigator.share) { try { await navigator.share({title: "MusicForge track", url}); return; } catch {} }
+    await navigator.clipboard.writeText(url);
+    toast("Share link copied");
+  } else if (b.dataset.lyrics) {
+    const open = document.getElementById("ly-" + b.dataset.lyrics).classList.toggle("open");
+    b.setAttribute("aria-expanded", open);
+  } else if (b.dataset.del) {
+    if (!confirm("Delete this track?")) return;
+    await fetch(API + "/api/tracks/" + b.dataset.del, {method:"DELETE"});
+    refresh();
+  }
+});
+
+refresh();
+</script>
+</body>
+</html>

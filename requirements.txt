@@ -1,0 +1,13 @@
+# torch already installed system-wide (CUDA build) — install it separately, not from here
+fastapi
+uvicorn[standard]
+transformers
+soundfile
+anthropic
+httpx  # for tests
+git+https://github.com/ace-step/ACE-Step.git  # vocal mode: sung lyrics, local
+pyloudnorm  # mastering pass
+faster-whisper  # training: lyric transcription
+demucs  # stem separation for the mixing stage
+resemble-enhance  # install with --no-deps on Windows; vocal stem restoration
+tabulate  # resemble-enhance runtime dep

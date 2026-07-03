@@ -1,0 +1,27 @@
+# generated audio & user data — regenerate, don't version
+audio/
+reference/
+tracks.db
+access_key.txt
+
+# training data & artifacts — large binaries, regenerate via training/README.md
+training/fma/
+training/raw/
+training/dataset/
+training/exps/
+training/sweep_out/
+training/refs/
+training/*.log
+training/*.json
+!training/lora_config.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# runtime state, not source
+lora_active.txt
+training/*_pid.txt
+tunnel.log
