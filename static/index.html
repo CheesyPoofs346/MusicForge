@@ -191,6 +191,10 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
   border:1px solid rgba(255,255,255,.22); border-radius:.8rem; padding:.25rem;
   margin-bottom:1.25rem; gap:.25rem;
 }
+.seg.three{grid-template-columns:1fr 1fr 1fr}
+#engine-seg button[data-eng="pro"][aria-pressed="true"]{
+  background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#1C1200; box-shadow:none;
+}
 .seg button{
   background:transparent; color:var(--muted); border:0; border-radius:.6rem;
   padding:.6rem; font:inherit; font-size:.9rem; font-weight:500; cursor:pointer;
@@ -249,6 +253,8 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
 .badge.gen{--dot:#FDE68A; color:#FDE68A}
 .badge.gen::before{animation:pulse 1.2s ease-in-out infinite}
 .badge.fail{--dot:#FCA5A5; color:var(--danger)}
+.badge.pro{background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#1C1200; font-weight:700}
+.badge.pro::before{background:#1C1200}
 
 .player{display:flex; align-items:center; gap:.9rem; margin-top:.75rem}
 .play{
@@ -517,6 +523,18 @@ html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
       <button type="button" id="mode-inst" aria-pressed="true">Instrumental<small>beats &amp; melodies</small></button>
       <button type="button" id="mode-vocal" aria-pressed="false">Vocal<small>lyrics, actually sung</small></button>
     </div>
+    <label>Length</label>
+    <div class="seg three" id="length-seg" role="group" aria-label="Track length">
+      <button type="button" data-sec="60" aria-pressed="true">1 min</button>
+      <button type="button" data-sec="120" aria-pressed="false">2 min</button>
+      <button type="button" data-sec="180" aria-pressed="false">3 min</button>
+    </div>
+    <label>Engine</label>
+    <div class="seg" id="engine-seg" role="group" aria-label="Engine">
+      <button type="button" data-eng="basic" aria-pressed="true">Basic<small>fast &middot; our tuned setup</small></button>
+      <button type="button" data-eng="pro" aria-pressed="false">Pro<small>HeartMuLa &middot; raw</small></button>
+    </div>
+    <p class="hint" id="engine-note" style="display:none">Pro runs HeartMuLa directly — cleaner vocals, but much slower (several minutes each) and skips our mix/master, style-reference and director's cut.</p>
     <details class="pro">
       <summary>Pro options — your lyrics &amp; style reference</summary>
       <label for="lyrics" style="margin-top:.75rem">Custom lyrics (sung as written)</label>
@@ -737,6 +755,19 @@ for (const [id, m] of [["#mode-inst","instrumental"],["#mode-vocal","vocal"]]) {
   });
 }
 
+let seconds = 60, engine = "basic";
+$("#length-seg").addEventListener("click", e => {
+  const b = e.target.closest("[data-sec]"); if (!b) return;
+  seconds = +b.dataset.sec;
+  $("#length-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+});
+$("#engine-seg").addEventListener("click", e => {
+  const b = e.target.closest("[data-eng]"); if (!b) return;
+  engine = b.dataset.eng;
+  $("#engine-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("#engine-note").style.display = engine === "pro" ? "" : "none";
+});
+
 function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2400);
@@ -758,10 +789,10 @@ $("#go").addEventListener("click", async () => {
     }
     const r = await fetch(API + "/api/generate", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({prompt, genre, mode, lyrics: $("#lyrics").value, ref_id, takes: $("#director").checked ? 3 : 1}),
+      body: JSON.stringify({prompt, genre, mode, lyrics: $("#lyrics").value, ref_id, takes: $("#director").checked ? 3 : 1, engine, seconds}),
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.status);
-    toast("Queued — generating on your GPU");
+    toast(engine === "pro" ? "Queued on Pro (HeartMuLa) — this takes several minutes" : "Queued — generating on your GPU");
     refresh();
   } catch (e) { toast("Error: " + e.message); }
   $("#go").disabled = false;
@@ -889,6 +920,7 @@ function trackCard(t){
       <div class="badges">
         <span class="badge">${esc(t.genre)}</span>
         <span class="badge ${t.mode==='vocal'?'vocal':''}">${t.mode}</span>
+        ${t.engine === "pro" ? `<span class="badge pro">Pro</span>` : ""}
         ${badge}
       </div>
     </div>

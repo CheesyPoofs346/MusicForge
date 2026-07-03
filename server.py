@@ -35,7 +35,9 @@ with db() as c:
         id TEXT PRIMARY KEY, prompt TEXT, genre TEXT, mode TEXT,
         lyrics TEXT, status TEXT, error TEXT, created REAL)"""
     )
-    for mig in ("ALTER TABLE tracks ADD COLUMN title TEXT", "ALTER TABLE tracks ADD COLUMN started REAL"):
+    for mig in ("ALTER TABLE tracks ADD COLUMN title TEXT",
+                "ALTER TABLE tracks ADD COLUMN started REAL",
+                "ALTER TABLE tracks ADD COLUMN engine TEXT"):
         try:
             c.execute(mig)
         except sqlite3.OperationalError:
@@ -216,6 +218,49 @@ def load_ace():
     return _ace
 
 
+def unload_ace():
+    """Free ACE-Step from VRAM — the Pro (HeartMuLa) engine needs nearly the whole
+    card, and both can't be resident at once on 16GB."""
+    global _ace
+    with _load_lock:
+        if _ace is not None:
+            _ace = None
+            import gc
+
+            import torch
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+
+HEARTLIB_DIR = Path(os.environ.get("HEARTLIB_DIR", r"C:\heartlib"))
+HEARTLIB_PY = HEARTLIB_DIR / ".venv" / "Scripts" / "python.exe"
+
+
+def generate_song_heartmula(prompt: str, lyrics: str, seconds: int, out_path: Path):
+    """Pro engine: HeartMuLa 3B, run in its own venv as a subprocess (it needs
+    transformers 4.57, incompatible with ACE-Step's env). Slow on Windows."""
+    import subprocess
+    import tempfile
+
+    if not HEARTLIB_PY.exists():
+        raise RuntimeError("Pro engine not installed — HeartMuLa venv missing at " + str(HEARTLIB_PY))
+    unload_ace()  # free VRAM for HeartMuLa
+    with tempfile.TemporaryDirectory() as td:
+        tp, lp = Path(td) / "tags.txt", Path(td) / "lyrics.txt"
+        tp.write_text(prompt, encoding="utf-8")
+        lp.write_text(lyrics, encoding="utf-8")
+        cmd = [
+            str(HEARTLIB_PY), str(HEARTLIB_DIR / "heartlib_gen.py"),
+            "--tags-file", str(tp), "--lyrics-file", str(lp),
+            "--seconds", str(seconds), "--out", str(out_path),
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5400)
+        if r.returncode != 0 or not out_path.exists():
+            raise RuntimeError("HeartMuLa failed: " + (r.stderr or r.stdout or "")[-400:])
+
+
 def _active_lora():
     """ACE_LORA env wins; else lora_active.txt (written when a fine-tune finishes)."""
     if os.environ.get("ACE_LORA"):
@@ -292,10 +337,12 @@ def generate_song(prompt: str, lyrics: str, seconds: int, out_path: Path, ref_pa
 pool = ThreadPoolExecutor(max_workers=1)  # ponytail: one GPU, one job; queue the rest
 
 
-def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "", ref_id: str = "", takes: int = 1):
+def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "", ref_id: str = "",
+            takes: int = 1, engine: str = "basic", seconds: int = 60):
     try:
         set_track(tid, status="generating", started=time.time())
         out = AUDIO_DIR / f"{tid}.wav"
+        mp3_out = AUDIO_DIR / f"{tid}.mp3"
         if custom_lyrics and mode == "vocal":
             # user brought their own lyrics — enhance the music prompt only
             music_prompt, _, song_title = enhance_and_write(prompt, genre, "instrumental")
@@ -304,12 +351,21 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
             music_prompt, lyrics, song_title = enhance_and_write(prompt, genre, mode)
         if song_title:
             set_track(tid, title=song_title)
-        ref_path = (REF_DIR / ref_id) if ref_id and ref_id.replace(".", "").isalnum() else None
         if mode == "vocal":
             set_track(tid, lyrics=lyrics)
+
+        if engine == "pro":
+            # HeartMuLa, raw — no style-ref, no director's cut, no mix/master ("just their model")
+            generate_song_heartmula(music_prompt, lyrics or "[instrumental]", seconds, mp3_out)
+            set_track(tid, status="done")
+            return
+
+        # --- basic: ACE-Step + our mix/master chain ---
+        ref_path = (REF_DIR / ref_id) if ref_id and ref_id.replace(".", "").isalnum() else None
+        if mode == "vocal":
             music_prompt += ", sustained melodic singing throughout — the vocalist sings, never speaks, while the full band plays under the voice for the whole song"
         if takes <= 1:
-            generate_song(music_prompt, lyrics or "[instrumental]", TRACK_SECONDS, out, ref_path=ref_path)
+            generate_song(music_prompt, lyrics or "[instrumental]", seconds, out, ref_path=ref_path)
         else:
             # director's cut: run the takes, keep the one that sounds most like the brief
             import random
@@ -317,7 +373,7 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
             best, best_score = None, -1.0
             for i in range(takes):
                 take = out.with_name(f"{tid}_take{i}.wav")
-                generate_song(music_prompt, lyrics or "[instrumental]", TRACK_SECONDS, take,
+                generate_song(music_prompt, lyrics or "[instrumental]", seconds, take,
                               ref_path=ref_path, seed=random.randint(0, 2**31))
                 s = judge_take(take, music_prompt)
                 if s > best_score:
@@ -337,7 +393,7 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
         import soundfile as sf
 
         data, sr = sf.read(out)
-        sf.write(out.with_suffix(".mp3"), data, sr)
+        sf.write(mp3_out, data, sr)
         out.unlink(missing_ok=True)
         set_track(tid, status="done")
     except Exception as e:  # surfaced in the UI, don't kill the worker
@@ -393,6 +449,8 @@ class GenerateReq(BaseModel):
     lyrics: str = ""     # optional: bring your own, sung as-is
     ref_id: str = ""     # optional: style-reference upload id
     takes: int = 1       # director's cut: generate N takes, keep the judged best
+    engine: str = "basic"  # "basic" = ACE-Step + our mix/master; "pro" = HeartMuLa raw
+    seconds: int = 60      # track length, 30-240s
 
 
 def _training_active() -> bool:
@@ -415,16 +473,19 @@ def generate(req: GenerateReq):
         raise HTTPException(400, "Prompt required (max 500 chars)")
     if req.mode not in ("instrumental", "vocal"):
         raise HTTPException(400, "mode must be instrumental or vocal")
+    if req.engine not in ("basic", "pro"):
+        raise HTTPException(400, "engine must be basic or pro")
     if len(req.lyrics) > 5000:
         raise HTTPException(400, "Lyrics too long (max 5000 chars)")
+    seconds = max(30, min(240, req.seconds))
     tid = uuid.uuid4().hex[:12]
     with db() as c:
         c.execute(
-            "INSERT INTO tracks(id,prompt,genre,mode,lyrics,status,error,created) VALUES(?,?,?,?,?,?,?,?)",
-            (tid, prompt, req.genre, req.mode, None, "queued", None, time.time()),
+            "INSERT INTO tracks(id,prompt,genre,mode,lyrics,status,error,created,engine) VALUES(?,?,?,?,?,?,?,?,?)",
+            (tid, prompt, req.genre, req.mode, None, "queued", None, time.time(), req.engine),
         )
     pool.submit(run_job, tid, prompt, req.genre, req.mode, req.lyrics.strip(), req.ref_id,
-                max(1, min(3, req.takes)))
+                max(1, min(3, req.takes)), req.engine, seconds)
     return {"id": tid}
 
 
@@ -441,18 +502,25 @@ async def upload_reference(file: UploadFile):
     return {"id": rid}
 
 
-STALL_SECONDS = int(os.environ.get("STALL_SECONDS", "600"))
+STALL_SECONDS = int(os.environ.get("STALL_SECONDS", "600"))          # basic: ~2min real, 10min = dead
+PRO_STALL_SECONDS = int(os.environ.get("PRO_STALL_SECONDS", "5400"))  # pro (HeartMuLa) is much slower
 
 
 @app.get("/api/tracks")
 def tracks():
+    now = time.time()
+    stuck = "Yo — this one got stuck and was cut loose. Run it again."
     with db() as c:
-        # watchdog: a real generation takes ~2 min; 10 min of "generating" = dead job
-        c.execute(
-            "UPDATE tracks SET status='failed', error='Yo — this one got stuck and was cut loose. Run it again.' "
-            "WHERE (status='generating' AND started < ?) OR (status='queued' AND created < ?)",
-            (time.time() - STALL_SECONDS, time.time() - 6 * STALL_SECONDS),
-        )
+        # watchdog, engine-aware: basic dies at 10min, pro (HeartMuLa) gets 90min
+        c.execute("UPDATE tracks SET status='failed', error=? "
+                  "WHERE status='generating' AND started < ? AND COALESCE(engine,'basic')='basic'",
+                  (stuck, now - STALL_SECONDS))
+        c.execute("UPDATE tracks SET status='failed', error=? "
+                  "WHERE status='generating' AND started < ? AND engine='pro'",
+                  (stuck, now - PRO_STALL_SECONDS))
+        # queued timeout generous, since a slow pro job ahead can hold the queue a while
+        c.execute("UPDATE tracks SET status='failed', error=? WHERE status='queued' AND created < ?",
+                  (stuck, now - 2 * PRO_STALL_SECONDS))
         rows = c.execute("SELECT * FROM tracks ORDER BY created DESC").fetchall()
     return [dict(r) for r in rows]
 
