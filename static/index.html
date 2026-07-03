@@ -879,7 +879,7 @@ function trackCard(t){
   // unique cover art from the track id
   const h = [...t.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
   const art = `background:conic-gradient(from ${h}deg, hsl(${h},85%,60%), hsl(${(h+80)%360},80%,55%), hsl(${(h+200)%360},85%,60%), hsl(${h},85%,60%))`;
-  return `<article class="track glass" data-id="${t.id}" data-created="${t.created}">
+  return `<article class="track glass" data-id="${t.id}" data-created="${t.created}" data-started="${t.started || ''}">
     <div class="top">
       <div class="art${t.status==='done'?' clickable':''}" style="${art}" ${t.status==='done'?`role="button" tabindex="0" data-stage="${t.id}" aria-label="Open fullscreen player"`:'aria-hidden="true"'}></div>
       <div style="flex:1;min-width:0">
@@ -893,7 +893,9 @@ function trackCard(t){
       </div>
     </div>
     ${busy ? `<div class="genwrap"><div class="bars" aria-hidden="true">${eq}</div>
-      <p class="genlabel">${t.mode === "vocal" ? "Writing lyrics, then singing them" : "Composing"} on your GPU
+      <p class="genlabel">${t.status === "queued"
+        ? `Waiting — #${allTracks.filter(x => x.status === "generating" || (x.status === "queued" && x.created < t.created)).length + 1} in the queue`
+        : `${t.mode === "vocal" ? "Writing lyrics, then singing them" : "Composing"} on your GPU`}
       <span class="elapsed"></span></p></div>` : ""}
     ${t.status === "done" ? `
       <div class="player">
@@ -915,7 +917,13 @@ function trackCard(t){
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/></svg>Delete</button>
       </div>
       ${t.lyrics ? `<pre class="lyrics" id="ly-${t.id}">${esc(t.lyrics)}</pre>` : ""}` : ""}
-    ${t.status === "failed" ? `<p class="error">${esc(t.error || "Generation failed")}</p>` : ""}
+    ${t.status === "failed" ? `<p class="error">${esc(t.error || "Generation failed")}</p>
+      <div class="actions">
+        <button type="button" data-retry="${t.id}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9 9 0 00-7 3.3M3 4v4h4"/></svg>Try again</button>
+        <button type="button" class="del" data-del="${t.id}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/></svg>Delete</button>
+      </div>` : ""}
   </article>`;
 }
 
@@ -961,13 +969,15 @@ function schedule(busy){ clearTimeout(refresh._t); refresh._t = setTimeout(refre
 
 setInterval(() => {
   document.querySelectorAll(".track .elapsed").forEach(el => {
-    const created = +el.closest(".track").dataset.created;
-    el.textContent = `· ${Math.max(0, Math.round(Date.now()/1000 - created))}s`;
+    const card = el.closest(".track");
+    // generating: count from 'started' (real gen time); queued: from 'created' (wait time)
+    const t0 = +(card.dataset.started || card.dataset.created);
+    el.textContent = `· ${Math.max(0, Math.round(Date.now()/1000 - t0))}s`;
   });
 }, 1000);
 
 $("#tracks").addEventListener("click", async e => {
-  const b = e.target.closest("[data-share],[data-lyrics],[data-del]");
+  const b = e.target.closest("[data-share],[data-lyrics],[data-del],[data-retry]");
   if (!b) return;
   if (b.dataset.share) {
     const url = `${API || location.origin}/share/${b.dataset.share}`;
@@ -977,6 +987,20 @@ $("#tracks").addEventListener("click", async e => {
   } else if (b.dataset.lyrics) {
     const open = document.getElementById("ly-" + b.dataset.lyrics).classList.toggle("open");
     b.setAttribute("aria-expanded", open);
+  } else if (b.dataset.retry) {
+    const t = allTracks.find(x => x.id === b.dataset.retry);
+    if (!t) return;
+    b.disabled = true;
+    try {
+      const r = await fetch(API + "/api/generate", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({prompt: t.prompt, genre: t.genre, mode: t.mode}),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || r.status);
+      await fetch(API + "/api/tracks/" + b.dataset.retry, {method: "DELETE"});
+      toast("Retrying — queued again");
+      refresh();
+    } catch (err) { toast("Error: " + err.message); b.disabled = false; }
   } else if (b.dataset.del) {
     if (!confirm("Delete this track?")) return;
     await fetch(API + "/api/tracks/" + b.dataset.del, {method:"DELETE"});
