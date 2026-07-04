@@ -107,5 +107,3 @@ test_smoke.py        API smoke test (mocks the GPU)
 
 App code is provided as-is. Built on open-source models — ACE-Step (Apache-2.0), Demucs, faster-whisper,
 resemble-enhance, CLAP — each under its own license. Training uses only Creative-Commons audio.
-
-🤖 Built with [Claude Code](https://claude.com/claude-code)
