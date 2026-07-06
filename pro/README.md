@@ -15,7 +15,7 @@ cd C:\heartlib
 python -m venv .venv
 .venv\Scripts\pip install torch==2.9.0 torchaudio==2.9.0 --index-url https://download.pytorch.org/whl/cu128
 .venv\Scripts\pip install numpy==2.0.2 transformers==4.57.0 tokenizers==0.22.1 accelerate==1.12.0 \
-  einops==0.8.1 vector-quantize-pytorch==1.27.15 soundfile torchtune==0.4.0 torchao==0.9.0 \
+  einops==0.8.1 vector-quantize-pytorch==1.27.15 soundfile torchao>=0.16.0 \
   sentencepiece tiktoken
 .venv\Scripts\pip install -e . --no-deps
 # download checkpoints (~22GB) into C:\heartlib\ckpt per the heartlib README

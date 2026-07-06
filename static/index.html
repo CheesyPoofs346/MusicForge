@@ -28,7 +28,7 @@ body{
 h1,h2{font-family:'Bricolage Grotesque','DM Sans',sans-serif}
 
 /* ---------------- liquid background ---------------- */
-.bg{position:fixed; inset:0; z-index:-2; overflow:hidden; filter:hue-rotate(var(--hue,0deg))}
+.bg{position:fixed; inset:0; z-index:-2; overflow:hidden; filter:hue-rotate(var(--hue,0deg)); transition:filter .5s ease-out}
 .bg i{
   position:absolute; border-radius:50%; filter:blur(90px); opacity:.75;
   width:46vmax; height:46vmax;
@@ -162,7 +162,9 @@ main{
 }
 
 .panel{padding:1.5rem}
-@media (min-width:841px){ .panel{position:sticky; top:1.25rem; z-index:30} }
+@media (min-width:841px){
+  .panel{position:sticky; top:1.25rem; z-index:30; max-height:calc(100vh - 2.5rem); overflow:auto; scrollbar-gutter:stable}
+}
 .panel h2{margin:0 0 1rem; font-size:1.15rem; letter-spacing:-.01em}
 label{display:block; font-size:.85rem; color:var(--muted); margin:0 0 .4rem; font-weight:500}
 textarea{
@@ -187,21 +189,41 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
   box-shadow:0 0 18px rgba(245,158,11,.4);
 }
 .seg{
+  position:relative; overflow:hidden;
   display:grid; grid-template-columns:1fr 1fr; background:rgba(0,0,0,.3);
   border:1px solid rgba(255,255,255,.22); border-radius:.8rem; padding:.25rem;
   margin-bottom:1.25rem; gap:.25rem;
+  --seg-n:2; --seg-idx:0;
 }
 .seg.three{grid-template-columns:1fr 1fr 1fr}
-#engine-seg button[data-eng="pro"][aria-pressed="true"]{
-  background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#1C1200; box-shadow:none;
-}
 .seg button{
+  position:relative; z-index:1;
   background:transparent; color:var(--muted); border:0; border-radius:.6rem;
   padding:.6rem; font:inherit; font-size:.9rem; font-weight:500; cursor:pointer;
   transition:background .2s, color .2s; min-height:44px;
 }
-.seg button[aria-pressed="true"]{background:rgba(255,255,255,.14); color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.seg button[aria-pressed="true"]{background:transparent; color:var(--text)}
 .seg small{display:block; font-size:.7rem; font-weight:400; opacity:.75}
+.seg .seg-slider{
+  position:absolute; z-index:0; touch-action:none; cursor:grab;
+  top:.25rem; bottom:.25rem; left:.25rem;
+  width:calc((100% - (var(--seg-n) + 1) * .25rem) / var(--seg-n));
+  border-radius:.6rem; background:rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25);
+  transform:translateX(calc(var(--seg-idx) * (100% + .25rem)));
+  transition:transform .28s cubic-bezier(.2,.8,.2,1), background .28s, box-shadow .28s;
+}
+.seg .seg-slider.dragging{transition:background .28s, box-shadow .28s; cursor:grabbing}
+#engine-seg[data-active="pro"] .seg-slider{
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  box-shadow:0 6px 18px rgba(249,115,22,.25);
+}
+#engine-seg[data-active="ultra"] .seg-slider{
+  background:linear-gradient(135deg,#8B5CF6,#6366F1);
+  box-shadow:0 6px 18px rgba(99,102,241,.26);
+}
+#engine-seg button[data-eng="pro"][aria-pressed="true"]{color:#1C1200}
+#engine-seg button[data-eng="ultra"][aria-pressed="true"]{color:#fff}
 .generate{
   width:100%; background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1C1200;
   border:0; border-radius:.9rem; padding:.95rem; font:inherit; font-size:1rem;
@@ -255,6 +277,8 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
 .badge.fail{--dot:#FCA5A5; color:var(--danger)}
 .badge.pro{background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#1C1200; font-weight:700}
 .badge.pro::before{background:#1C1200}
+.badge.ultra{background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; font-weight:700}
+.badge.ultra::before{background:#fff}
 
 .player{display:flex; align-items:center; gap:.9rem; margin-top:.75rem}
 .play{
@@ -273,11 +297,24 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
 .time{flex-shrink:0; font-size:.78rem; color:var(--dim); font-variant-numeric:tabular-nums; min-width:5.2rem; text-align:right}
 
 .genwrap{margin-top:.9rem}
-.bars{display:flex; gap:3px; align-items:flex-end; height:32px}
-.bars i{width:4px; background:linear-gradient(180deg, #FDE68A, var(--accent-2)); border-radius:2px}
-@media (prefers-reduced-motion:no-preference){ .bars i{animation:eq 1s ease-in-out infinite} }
-@keyframes eq{0%,100%{height:20%}50%{height:100%}}
-@media (prefers-reduced-motion:reduce){ .bars i{height:60%} }
+.genbar{width:100%; max-width:40rem; height:34px}
+.bars{
+  display:grid; grid-template-columns:repeat(48,minmax(2px,1fr)); gap:3px;
+  align-items:end; height:32px; width:100%;
+}
+.bars i{
+  height:var(--h,60%); min-height:5px;
+  background:rgba(253,230,138,.16); border-radius:3px; opacity:.42;
+  transform:scaleY(.72); transform-origin:bottom;
+  transition:background .35s ease, opacity .35s ease, transform .35s ease, box-shadow .35s ease;
+}
+.bars i.on{
+  background:linear-gradient(180deg, #FDE68A, var(--accent-2)); opacity:1;
+  transform:scaleY(1); box-shadow:0 0 12px rgba(249,115,22,.28);
+}
+@media (prefers-reduced-motion:no-preference){ .bars i.on{animation:eq 1s ease-in-out infinite} }
+@keyframes eq{0%,100%{transform:scaleY(.68)}50%{transform:scaleY(1.05)}}
+@media (prefers-reduced-motion:reduce){ .bars i,.bars i.on{animation:none; transform:scaleY(.82)} }
 .genlabel{font-size:.82rem; color:var(--muted); margin-top:.5rem; display:flex; gap:.4rem; align-items:center}
 .genlabel .elapsed{color:#FDE68A; font-variant-numeric:tabular-nums}
 
@@ -368,6 +405,14 @@ footer{max-width:72rem; margin:0 auto; padding:2rem 1.5rem 6.5rem; color:var(--d
 }
 .art.clickable:hover::after{opacity:1}
 #confetti{position:fixed; inset:0; pointer-events:none; z-index:60}
+#ultra-flash{
+  position:fixed; inset:0; pointer-events:none; z-index:55; opacity:0;
+  background:radial-gradient(circle at 50% 42%, rgba(139,92,246,.55), rgba(99,102,241,.22) 45%, transparent 70%);
+  transition:opacity .45s ease-out;
+}
+#ultra-flash.show{opacity:1; transition:opacity .08s ease-out}
+@keyframes ultraPulse{ 0%{transform:scale(1)} 35%{transform:scale(1.04)} 100%{transform:scale(1)} }
+#engine-seg.ultra-pulse{animation:ultraPulse .4s ease-out}
 
 /* ---------------- fullscreen now-playing ---------------- */
 #stage{
@@ -404,18 +449,6 @@ footer{max-width:72rem; margin:0 auto; padding:2rem 1.5rem 6.5rem; color:var(--d
 #stage .np-tags{display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap}
 #stage .np-tags span{font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
   padding:.25rem .7rem; border-radius:1rem; background:rgba(255,255,255,.12); backdrop-filter:blur(8px)}
-#stage .lyrics-scroll{
-  position:relative;  /* so .ln offsetTop is relative to this box, not #stage — fixes auto-scroll */
-  max-height:24vh; overflow:hidden; width:min(90%,36rem); mask-image:linear-gradient(transparent,#000 25%,#000 75%,transparent);
-  -webkit-mask-image:linear-gradient(transparent,#000 25%,#000 75%,transparent);
-  scroll-behavior:smooth;
-}
-#stage .lyrics-scroll .ln{
-  font-size:1.05rem; line-height:1.9; color:rgba(255,255,255,.32); transition:color .3s, transform .3s;
-  font-weight:500;
-}
-#stage .lyrics-scroll .ln.tag{font-size:.75rem; text-transform:uppercase; letter-spacing:.15em; color:rgba(255,255,255,.28); font-weight:700}
-#stage .lyrics-scroll .ln.active{color:#fff; transform:scale(1.04)}
 #stage .np-wave{width:min(90%,44rem); height:64px; cursor:pointer; touch-action:none}
 #stage .np-bar{display:flex; align-items:center; gap:1.25rem}
 #stage .np-time{font-variant-numeric:tabular-nums; font-size:.85rem; color:rgba(255,255,255,.6); min-width:9rem; text-align:center}
@@ -429,7 +462,7 @@ footer{max-width:72rem; margin:0 auto; padding:2rem 1.5rem 6.5rem; color:var(--d
 #stage .toprow{position:absolute; top:1.2rem; left:1.2rem; right:1.2rem; display:flex; justify-content:space-between; align-items:center; z-index:2}
 #stage .toprow .right{display:flex; gap:.6rem}
 #stage .vizname{font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:rgba(255,255,255,.55); align-self:center; margin-right:.3rem}
-@media (max-width:640px){ #stage .disc{width:44vmin} #stage .lyrics-scroll{max-height:18vh} }
+@media (max-width:640px){ #stage .disc{width:44vmin} }
 
 /* themed scrollbar — the default grey bar fights the glass look */
 ::-webkit-scrollbar{width:10px}
@@ -519,22 +552,26 @@ html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
     <label style="margin-top:1.25rem">Genre</label>
     <div class="chips" id="genres" role="group" aria-label="Genre"></div>
     <label>Mode</label>
-    <div class="seg" role="group" aria-label="Mode">
+    <div class="seg" id="mode-seg" role="group" aria-label="Mode">
+      <span class="seg-slider" aria-hidden="true"></span>
       <button type="button" id="mode-inst" aria-pressed="true">Instrumental<small>beats &amp; melodies</small></button>
       <button type="button" id="mode-vocal" aria-pressed="false">Vocal<small>lyrics, actually sung</small></button>
     </div>
     <label>Length</label>
     <div class="seg three" id="length-seg" role="group" aria-label="Track length">
+      <span class="seg-slider" aria-hidden="true"></span>
       <button type="button" data-sec="60" aria-pressed="true">1 min</button>
       <button type="button" data-sec="120" aria-pressed="false">2 min</button>
       <button type="button" data-sec="180" aria-pressed="false">3 min</button>
     </div>
     <label>Engine</label>
-    <div class="seg" id="engine-seg" role="group" aria-label="Engine">
+    <div class="seg three" id="engine-seg" role="group" aria-label="Engine" data-active="basic">
+      <span class="seg-slider" aria-hidden="true"></span>
       <button type="button" data-eng="basic" aria-pressed="true">Basic<small>fast &middot; our tuned setup</small></button>
-      <button type="button" data-eng="pro" aria-pressed="false">Pro<small>HeartMuLa &middot; raw</small></button>
+      <button type="button" data-eng="pro" aria-pressed="false">Pro<small>raw &middot; known bugs</small></button>
+      <button type="button" data-eng="ultra" aria-pressed="false">Ultra<small>Suno Competition &middot; fast</small></button>
     </div>
-    <p class="hint" id="engine-note" style="display:none">Pro runs HeartMuLa directly — cleaner vocals, but much slower (several minutes each) and skips our mix/master, style-reference and director's cut.</p>
+    <p class="hint" id="engine-note" style="display:none"></p>
     <details class="pro">
       <summary>Pro options — your lyrics &amp; style reference</summary>
       <label for="lyrics" style="margin-top:.75rem">Custom lyrics (sung as written)</label>
@@ -558,6 +595,7 @@ html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
 <footer>Forged locally &middot; trained on Creative Commons music &middot; tuned against the charts</footer>
 
 <canvas id="confetti" aria-hidden="true"></canvas>
+<div id="ultra-flash" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status"></div>
 
 <div id="stage" role="dialog" aria-modal="true" aria-label="Now playing">
@@ -581,7 +619,6 @@ html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
     <div class="disc" id="stage-disc" aria-hidden="true"></div>
     <h2 class="np-title" id="stage-title"></h2>
     <div class="np-tags" id="stage-tags"></div>
-    <div class="lyrics-scroll" id="stage-lyrics"></div>
     <canvas class="np-wave" id="stage-wave" aria-label="Seek"></canvas>
     <div class="np-bar">
       <button class="npbtn" id="stage-back" aria-label="Back 10 seconds" title="Back 10s (←)">
@@ -636,21 +673,95 @@ document.querySelectorAll(".vibe").forEach(v => v.addEventListener("click", () =
 }));
 
 // ---------------- fun: dice, placeholders, confetti ----------------
-const IDEAS = [
-  "villain anthem with orchestral hits over drill drums, whispered verses exploding into a shouted chorus",
-  "sunset drive song with talkbox hooks, slap bass and lazy falsetto harmonies",
-  "underdog boxing-movie rap with triumphant horns, sped-up soul sample and crowd chants",
-  "cosmic funk odyssey about dancing on Saturn's rings, wah guitar and vocoder choir",
-  "heartbreak R&B at 3am with rain sounds, sparse keys and a falsetto that cracks on purpose",
-  "pirate-tavern folk-punk singalong with accordion, stomps and gang vocals",
-  "cyberpunk phonk chase scene with cowbells, distorted 808s and detuned sirens",
-  "gospel-trap redemption song, church organ under hard drums, choir answering every bar",
-  "beach-party latin pop with brass stabs, güira groove and a chorus in call-and-response",
-  "arena rock finale about the last night on tour, twin guitar leads and a stadium clap break",
+// Thousands of distinct prompts from a handful of hand-written, quality-controlled
+// fragments (scene x texture x twist, occasionally x an extra flourish) instead of
+// picking from a small fixed list — every fragment was written to read naturally
+// slotted into any of the others, so the combinations stay coherent, not word salad.
+const IDEA_SCENES = [
+  "villain anthem for the final boss walking in slow motion",
+  "sunset drive song for the last exit before the coast",
+  "underdog boxing-movie theme for the twelfth round",
+  "cosmic funk odyssey about dancing on Saturn's rings",
+  "heartbreak R&B ballad for 3am and an unread text",
+  "pirate-tavern singalong for a crew that just struck gold",
+  "cyberpunk chase scene through neon back-alleys",
+  "gospel-trap redemption song for a Sunday after a hard week",
+  "beach-party anthem for the first day of summer",
+  "arena rock finale for the last night of the tour",
+  "heist-movie theme for the getaway car pulling away",
+  "prom-night slow dance nobody wants to end",
+  "road-trip singalong with the windows down at midnight",
+  "revenge anthem for someone who finally stopped caring",
+  "victory-lap anthem for a comeback nobody saw coming",
+  "haunted-carnival waltz for the ride that goes too fast",
+  "first-love anthem for a summer that ended too soon",
+  "underground-rave anthem for 4am on the last train home",
+  "wedding-day anthem for the walk down the aisle",
+  "space-western theme for a duel on a dead planet",
+  "graduation anthem for the last day before everything changes",
+  "storm-chasing anthem for outrunning something you can't name",
+  "late-night diner ballad for two people who should talk more",
+  "championship-parade anthem for a hometown that finally won",
 ];
+const IDEA_TEXTURES = [
+  "orchestral hits stacked over drill drums",
+  "talkbox hooks riding a slap bass groove",
+  "triumphant horns over a sped-up soul sample",
+  "wah guitar tangled with a vocoder choir",
+  "rain sounds under sparse, unhurried keys",
+  "accordion and boot-stomps driving the beat",
+  "cowbells and detuned sirens over distorted 808s",
+  "a church organ buried under hard-hitting drums",
+  "brass stabs locked into a güira groove",
+  "twin guitar leads trading off over a stadium clap break",
+  "a chopped vinyl loop under crisp boom-bap drums",
+  "shimmering synth arpeggios over a four-on-the-floor kick",
+  "muted trumpet drifting over a lazy jazz-hop groove",
+  "distorted power chords under a driving punk backbeat",
+  "steel drums bouncing over a laid-back dancehall riddim",
+  "a fingerpicked acoustic guitar under warm string pads",
+  "glitchy vocal chops stuttering over a half-time beat",
+  "a growling bass synth under industrial-tight percussion",
+  "hand claps and tambourine over a Motown-style groove",
+  "an 80s gated-reverb snare under icy synth stabs",
+  "a mariachi horn section over a driving cumbia beat",
+  "reverb-soaked surf guitar over a shuffling drum groove",
+  "trap hi-hats rolling under a moody piano loop",
+  "a full brass band breakdown over New Orleans second-line drums",
+];
+const IDEA_TWISTS = [
+  "whispered verses exploding into a shouted chorus",
+  "lazy falsetto harmonies stacked three deep",
+  "crowd chants answering every other bar",
+  "a choir that answers the lead vocal like a call-and-response",
+  "a bridge that drops to just voice and one instrument",
+  "a key change in the last chorus that hits like a gut-punch",
+  "a spoken-word verse before the beat finally kicks in",
+  "vocals that crack on purpose right at the emotional peak",
+  "a hook that repeats until it's impossible not to sing along",
+  "a false ending that comes back twice as big",
+  "harmonies that only show up in the final chorus",
+  "a breakdown where every instrument drops out but the kick",
+  "an ad-lib-heavy hype-man energy under the main vocal",
+  "a duet where two voices trade lines like an argument",
+  "a slow build that doesn't pay off until the final 30 seconds",
+  "a chant-along outro that fades out mid-crowd-noise",
+  "lyrics that flip the meaning of the hook by the last verse",
+  "a vocal run that shows off right before the beat drops back in",
+];
+function randomIdea(){
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  return `${pick(IDEA_SCENES)}, ${pick(IDEA_TEXTURES)}, ${pick(IDEA_TWISTS)}`;
+}
 $("#dice").addEventListener("click", () => {
-  $("#prompt").value = IDEAS[Math.floor(Math.random() * IDEAS.length)];
+  $("#prompt").value = randomIdea();
   $("#prompt").focus();
+
+  // fully random: genre, mode, and length roll too — not just the prompt text
+  $("#genres").querySelector(`[data-g="${GENRES[Math.floor(Math.random() * GENRES.length)]}"]`).click();
+  (Math.random() < 0.5 ? $("#mode-inst") : $("#mode-vocal")).click();
+  $("#length-seg").querySelectorAll("[data-sec]")[Math.floor(Math.random() * 3)].click();
+
   if (navigator.vibrate) navigator.vibrate(8);
 });
 const PLACEHOLDERS = [
@@ -664,13 +775,13 @@ setInterval(() => {
   if (document.activeElement !== $("#prompt")) $("#prompt").placeholder = PLACEHOLDERS[++phi % PLACEHOLDERS.length];
 }, 5000);
 
-function confetti(){
+function confetti(colors = ["#FDE68A", "#F97316", "#FF3D81", "#7C3AED", "#06B6D4", "#FAFAF9"], origin = null){
   if (reduceMotion) return;
   const cv = $("#confetti"), ctx = cv.getContext("2d");
   cv.width = innerWidth; cv.height = innerHeight;
-  const colors = ["#FDE68A", "#F97316", "#FF3D81", "#7C3AED", "#06B6D4", "#FAFAF9"];
+  const ox = origin ? origin.x : innerWidth / 2, oy = origin ? origin.y : innerHeight * .35;
   const parts = Array.from({length: 90}, () => ({
-    x: innerWidth / 2 + (Math.random() - .5) * 200, y: innerHeight * .35,
+    x: ox + (Math.random() - .5) * 200, y: oy,
     vx: (Math.random() - .5) * 14, vy: -6 - Math.random() * 9,
     s: 4 + Math.random() * 5, c: colors[Math.random() * colors.length | 0],
     r: Math.random() * Math.PI, vr: (Math.random() - .5) * .3,
@@ -747,25 +858,90 @@ $("#genres").addEventListener("click", e => {
   document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b));
 });
 
-for (const [id, m] of [["#mode-inst","instrumental"],["#mode-vocal","vocal"]]) {
-  $(id).addEventListener("click", () => {
-    mode = m;
-    $("#mode-inst").setAttribute("aria-pressed", m === "instrumental");
-    $("#mode-vocal").setAttribute("aria-pressed", m === "vocal");
-  });
+let seconds = 60, engine = "basic";
+const ENGINE_NOTES = {
+  pro: "Pro runs raw, no mix/master — currently experiencing quality bugs we're still tracking down, and much slower (several minutes each). Also skips style-reference and director's cut.",
+  ultra: "Ultra runs raw, no mix/master (our Suno Competition engine) — dramatically faster, kept warm on your GPU between tracks. Also skips style-reference and director's cut.",
+};
+function ultraEffect(btn){
+  if (reduceMotion) return;
+  $("#bg").style.setProperty("--hue", "255deg");
+  const flash = $("#ultra-flash");
+  flash.classList.add("show");
+  setTimeout(() => flash.classList.remove("show"), 90);
+  const seg = $("#engine-seg");
+  seg.classList.remove("ultra-pulse"); void seg.offsetWidth; // restart the animation on repeat clicks
+  seg.classList.add("ultra-pulse");
+  const r = btn.getBoundingClientRect();
+  confetti(["#8B5CF6", "#6366F1", "#C4B5FD", "#FAFAF9"], {x: r.left + r.width / 2, y: r.top + r.height / 2});
+  if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
 }
 
-let seconds = 60, engine = "basic";
-$("#length-seg").addEventListener("click", e => {
-  const b = e.target.closest("[data-sec]"); if (!b) return;
-  seconds = +b.dataset.sec;
-  $("#length-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
-});
-$("#engine-seg").addEventListener("click", e => {
-  const b = e.target.closest("[data-eng]"); if (!b) return;
+// Shared sliding-pill behavior for every segmented control (mode, length,
+// engine): click a button OR grab the active pill and drag it to another
+// option. Position is driven by --seg-idx/--seg-n custom properties so the
+// same CSS transition animates both a click-jump and a drag-release snap.
+function initSegSlider(seg, onSelect){
+  const slider = seg.querySelector(".seg-slider");
+  const buttons = () => Array.from(seg.querySelectorAll("button"));
+  seg.style.setProperty("--seg-n", buttons().length);
+
+  function activate(idx){
+    const btns = buttons();
+    seg.style.setProperty("--seg-idx", idx);
+    btns.forEach((b, i) => b.setAttribute("aria-pressed", i === idx));
+    onSelect(btns[idx]);
+  }
+
+  const DRAG_THRESHOLD = 4;
+  let down = false, dragging = false, dragged = false, startX = 0, segRect, sliderWidth, pid = null;
+
+  seg.addEventListener("click", e => {
+    if (dragged) { dragged = false; return; }
+    const b = e.target.closest("button"); if (!b) return;
+    activate(buttons().indexOf(b));
+  });
+  seg.addEventListener("pointerdown", e => {
+    const b = e.target.closest('button[aria-pressed="true"]'); if (!b) return;
+    down = true; startX = e.clientX; pid = e.pointerId;
+    segRect = seg.getBoundingClientRect();
+    sliderWidth = slider.getBoundingClientRect().width;
+  });
+  seg.addEventListener("pointermove", e => {
+    if (!down) return;
+    if (!dragging && Math.abs(e.clientX - startX) > DRAG_THRESHOLD) {
+      dragging = true; dragged = true;
+      slider.setPointerCapture(pid);
+      slider.classList.add("dragging");
+    }
+    if (!dragging) return;
+    const left = Math.min(Math.max(e.clientX - segRect.left - sliderWidth / 2, 0), segRect.width - sliderWidth);
+    slider.style.transform = `translateX(${left}px)`;
+  });
+  const endDrag = e => {
+    if (!down) return;
+    down = false;
+    if (!dragging) return;
+    dragging = false;
+    slider.classList.remove("dragging");
+    slider.style.transform = ""; // hand position back to the CSS rule driven by --seg-idx
+    const n = buttons().length;
+    const rel = Math.min(Math.max(e.clientX - segRect.left, 0), segRect.width - 1);
+    activate(Math.floor(rel / (segRect.width / n)));
+  };
+  seg.addEventListener("pointerup", endDrag);
+  seg.addEventListener("pointercancel", endDrag);
+}
+
+initSegSlider($("#mode-seg"), b => { mode = b.id === "mode-inst" ? "instrumental" : "vocal"; });
+initSegSlider($("#length-seg"), b => { seconds = +b.dataset.sec; });
+initSegSlider($("#engine-seg"), b => {
   engine = b.dataset.eng;
-  $("#engine-seg").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
-  $("#engine-note").style.display = engine === "pro" ? "" : "none";
+  $("#engine-seg").dataset.active = engine;
+  const note = ENGINE_NOTES[engine];
+  $("#engine-note").textContent = note || "";
+  $("#engine-note").style.display = note ? "" : "none";
+  if (engine === "ultra") ultraEffect(b);
 });
 
 function toast(msg){
@@ -792,7 +968,7 @@ $("#go").addEventListener("click", async () => {
       body: JSON.stringify({prompt, genre, mode, lyrics: $("#lyrics").value, ref_id, takes: $("#director").checked ? 3 : 1, engine, seconds}),
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.status);
-    toast(engine === "pro" ? "Queued on Pro (HeartMuLa) — this takes several minutes" : "Queued — generating on your GPU");
+    toast(engine === "pro" ? "Queued on Pro — this takes several minutes (known to be buggy right now)" : "Queued — generating on your GPU");
     refresh();
   } catch (e) { toast("Error: " + e.message); }
   $("#go").disabled = false;
@@ -902,15 +1078,55 @@ async function initPlayer(card){
 }
 
 // ---------------- track list ----------------
+const PROGRESS_BARS = 48;
+function progressExpectedSeconds(t){
+  const req = +(t.seconds || t.dataset?.seconds || seconds || 60);
+  const eng = t.engine || t.dataset?.engine;
+  if (eng === "pro") return Math.max(240, req * 4);
+  if (eng === "ultra") return Math.max(80, req * 1.4);
+  return Math.max(120, req * 2);
+}
+function progressForTrack(t){
+  const status = t.status || t.dataset?.status;
+  const now = Date.now() / 1000;
+  const created = +(t.created || t.dataset?.created || now);
+  const started = +(t.started || t.dataset?.started || 0);
+  if (status === "queued") return Math.min(.12, .03 + Math.max(0, now - created) / 900);
+  if (status !== "generating") return 1;
+  const elapsed = Math.max(0, now - (started || created));
+  const expected = +(t.expected || t.dataset?.expected || progressExpectedSeconds(t));
+  return Math.max(.06, Math.min(1, elapsed / expected));
+}
+function progressBars(progress){
+  const active = Math.max(1, Math.round(progress * PROGRESS_BARS));
+  return Array.from({length: PROGRESS_BARS}, (_, i) => {
+    const h = 30 + Math.round((Math.sin(i * 1.7) + 1) * 32);
+    const delay = ((i % 12) * .07).toFixed(2);
+    return `<i class="${i < active ? "on" : ""}" style="--h:${h}%;animation-delay:${delay}s"></i>`;
+  }).join("");
+}
+function updateProgressCard(card){
+  const bar = card.querySelector(".genbar");
+  if (!bar) return;
+  const progress = progressForTrack(card);
+  bar.setAttribute("aria-valuenow", Math.round(progress * 100));
+  const active = Math.max(1, Math.round(progress * PROGRESS_BARS));
+  bar.querySelectorAll("i").forEach((b, i) => b.classList.toggle("on", i < active));
+}
+function updateProgressCards(){
+  document.querySelectorAll(".track .genbar").forEach(bar => updateProgressCard(bar.closest(".track")));
+}
 function trackCard(t){
   const busy = t.status === "queued" || t.status === "generating";
   const badge = t.status === "failed" ? `<span class="badge fail">Failed</span>`
     : busy ? `<span class="badge gen">${t.status}</span>` : "";
-  const eq = '<i style="animation-delay:' + [0,.15,.3,.45,.6,.75,.9,1.05,1.2,1.35].join('s"></i><i style="animation-delay:') + 's"></i>';
+  const progress = busy ? progressForTrack(t) : 1;
+  const eq = progressBars(progress);
+  const expected = progressExpectedSeconds(t);
   // unique cover art from the track id
   const h = [...t.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
   const art = `background:conic-gradient(from ${h}deg, hsl(${h},85%,60%), hsl(${(h+80)%360},80%,55%), hsl(${(h+200)%360},85%,60%), hsl(${h},85%,60%))`;
-  return `<article class="track glass" data-id="${t.id}" data-created="${t.created}" data-started="${t.started || ''}">
+  return `<article class="track glass" data-id="${t.id}" data-status="${t.status}" data-engine="${t.engine || "basic"}" data-seconds="${t.seconds || 60}" data-created="${t.created}" data-started="${t.started || ''}" data-expected="${expected}">
     <div class="top">
       <div class="art${t.status==='done'?' clickable':''}" style="${art}" ${t.status==='done'?`role="button" tabindex="0" data-stage="${t.id}" aria-label="Open fullscreen player"`:'aria-hidden="true"'}></div>
       <div style="flex:1;min-width:0">
@@ -921,10 +1137,11 @@ function trackCard(t){
         <span class="badge">${esc(t.genre)}</span>
         <span class="badge ${t.mode==='vocal'?'vocal':''}">${t.mode}</span>
         ${t.engine === "pro" ? `<span class="badge pro">Pro</span>` : ""}
+        ${t.engine === "ultra" ? `<span class="badge ultra">Ultra</span>` : ""}
         ${badge}
       </div>
     </div>
-    ${busy ? `<div class="genwrap"><div class="bars" aria-hidden="true">${eq}</div>
+    ${busy ? `<div class="genwrap"><div class="genbar" role="progressbar" aria-label="Generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress * 100)}"><div class="bars" aria-hidden="true">${eq}</div></div>
       <p class="genlabel">${t.status === "queued"
         ? `Waiting — #${allTracks.filter(x => x.status === "generating" || (x.status === "queued" && x.created < t.created)).length + 1} in the queue`
         : `${t.mode === "vocal" ? "Writing lyrics, then singing them" : "Composing"} on your GPU`}
@@ -939,7 +1156,7 @@ function trackCard(t){
         <audio preload="none" crossorigin="anonymous" src="${API}/api/tracks/${t.id}/audio"></audio>
       </div>
       <div class="actions">
-        <a href="${API}/api/tracks/${t.id}/audio?download=1">
+        <a href="${API}/api/tracks/${t.id}/audio?download=1" download="musicforge-${t.id}.mp3">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>Download</a>
         <button type="button" data-share="${t.id}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13"/></svg>Share</button>
@@ -966,12 +1183,18 @@ async function refresh(){
   let list;
   try { list = await (await fetch(API + "/api/tracks")).json(); } catch { return schedule(true); }
   allTracks = list;
+  // re-rendering swaps out <audio> elements; skip it while something is playing or
+  // the fullscreen stage is open, so playback isn't cut when a new track finishes.
+  const disrupts = anyPlaying() || stage.el.classList.contains("open");
   // celebrate freshly finished tracks
+  let autoOpenId = null;
   for (const t of list) {
     const prev = knownStatus[t.id];
     if (prev && prev !== "done" && t.status === "done") {
       confetti();
-      toast("Track ready — hit play");
+      // Ultra is fast enough that "hit play" can just... happen. Skip the click.
+      if (t.engine === "ultra" && !disrupts) { autoOpenId = t.id; toast("Ultra track ready — playing"); }
+      else toast("Track ready — hit play");
     } else if (prev && prev !== "failed" && t.status === "failed") {
       toast("Yo — that track failed. Run it again.");
       if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
@@ -979,9 +1202,6 @@ async function refresh(){
     knownStatus[t.id] = t.status;
   }
   const json = JSON.stringify(list);
-  // re-rendering swaps out <audio> elements; skip it while something is playing or
-  // the fullscreen stage is open, so playback isn't cut when a new track finishes.
-  const disrupts = anyPlaying() || stage.el.classList.contains("open");
   if (json !== tracksCache && !disrupts) {
     tracksCache = json;
     $("#tracks").innerHTML = list.length ? list.map(trackCard).join("") :
@@ -989,6 +1209,8 @@ async function refresh(){
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6zM18 19a3 3 0 100-6 3 3 0 000 6z"/></svg>
         <p><strong>No tracks yet</strong></p><p>Describe one and hit Generate — even a rough idea works.</p></div>`;
     document.querySelectorAll(".track").forEach(initPlayer);
+    updateProgressCards();
+    if (autoOpenId) openStage(autoOpenId);
   }
   const busy = list.filter(t => t.status === "queued" || t.status === "generating").length;
   $("#queue-status").innerHTML = busy ? `<span class="pulse" aria-hidden="true"></span>${busy} generating` : "";
@@ -1004,6 +1226,7 @@ setInterval(() => {
     const card = el.closest(".track");
     // generating: count from 'started' (real gen time); queued: from 'created' (wait time)
     const t0 = +(card.dataset.started || card.dataset.created);
+    updateProgressCard(card);
     el.textContent = `· ${Math.max(0, Math.round(Date.now()/1000 - t0))}s`;
   });
 }, 1000);
@@ -1026,7 +1249,10 @@ $("#tracks").addEventListener("click", async e => {
     try {
       const r = await fetch(API + "/api/generate", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({prompt: t.prompt, genre: t.genre, mode: t.mode}),
+        body: JSON.stringify({
+          prompt: t.prompt, genre: t.genre, mode: t.mode,
+          lyrics: t.lyrics || "", engine: t.engine || "basic", seconds: t.seconds || 60,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).detail || r.status);
       await fetch(API + "/api/tracks/" + b.dataset.retry, {method: "DELETE"});
@@ -1048,7 +1274,7 @@ const stage = {
   el: $("#stage"), canvas: $("#stage .viz"), ctx: null,
   modes: ["Mirror Bars", "Radial", "Oscilloscope", "Aurora"], mode: 0,
   raf: 0, audio: null, an: null, freq: null, time: null, hue: 45, dur: 0,
-  peaks: null, particles: [], t0: 0, _lines: null,
+  peaks: null, particles: [], t0: 0,
 };
 stage.ctx = stage.canvas.getContext("2d");
 
@@ -1064,18 +1290,6 @@ function stageResize(){
   stage.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 addEventListener("resize", () => { if (stage.el.classList.contains("open")) stageResize(); });
-
-function buildStageLyrics(lyrics){
-  const box = $("#stage-lyrics");
-  if (!lyrics) { box.innerHTML = ""; box.style.display = "none"; stage._lines = null; return; }
-  box.style.display = "";
-  const lines = lyrics.split("\n").map(s => s.trim()).filter(Boolean);
-  box.innerHTML = lines.map(l => {
-    const tag = /^\[.*\]$/.test(l);
-    return `<div class="ln${tag ? " tag" : ""}">${esc(tag ? l.replace(/[\[\]]/g, "") : l)}</div>`;
-  }).join("");
-  stage._lines = [...box.querySelectorAll(".ln")];
-}
 
 function openStage(id){
   const t = allTracks.find(x => x.id === id);
@@ -1100,7 +1314,6 @@ function openStage(id){
   titleEl.textContent = t.title || title(t.prompt);
   titleEl.style.setProperty("--np", `hsl(${stage.hue},90%,70%)`);
   $("#stage-tags").innerHTML = `<span>${esc(t.genre)}</span><span>${esc(t.mode)}</span>`;
-  buildStageLyrics(t.lyrics);
   $("#stage-vizname").textContent = stage.modes[stage.mode];
 
   stage.el.classList.add("open");
@@ -1156,12 +1369,6 @@ function stageLoop(){
     const frac = Math.min(1, (stage.audio.currentTime || 0) / stage.dur);
     $("#stage-time").textContent = `${fmt(stage.audio.currentTime)} / ${fmt(stage.dur)}`;
     drawStageWave(frac);
-    if (stage._lines && stage._lines.length) {
-      const idx = Math.round(frac * (stage._lines.length - 1));
-      stage._lines.forEach((el, i) => el.classList.toggle("active", i === idx));
-      const box = $("#stage-lyrics"), active = stage._lines[idx];
-      if (active) box.scrollTop = active.offsetTop - box.clientHeight / 2 + active.clientHeight / 2;
-    }
   }
 }
 

@@ -37,7 +37,8 @@ with db() as c:
     )
     for mig in ("ALTER TABLE tracks ADD COLUMN title TEXT",
                 "ALTER TABLE tracks ADD COLUMN started REAL",
-                "ALTER TABLE tracks ADD COLUMN engine TEXT"):
+                "ALTER TABLE tracks ADD COLUMN engine TEXT",
+                "ALTER TABLE tracks ADD COLUMN seconds INTEGER"):
         try:
             c.execute(mig)
         except sqlite3.OperationalError:
@@ -234,19 +235,22 @@ def unload_ace():
                 torch.cuda.empty_cache()
 
 
-HEARTLIB_DIR = Path(os.environ.get("HEARTLIB_DIR", r"C:\heartlib"))
+# Suno Competition (Pro engine). Lives in its own subfolder — separate from
+# Basic's LoRA checkpoint — so nothing gets mixed up between the two.
+HEARTLIB_DIR = Path(os.environ.get("HEARTLIB_DIR", r"C:\musicforge\pro"))
 HEARTLIB_PY = HEARTLIB_DIR / ".venv" / "Scripts" / "python.exe"
 
 
 def generate_song_heartmula(prompt: str, lyrics: str, seconds: int, out_path: Path):
-    """Pro engine: HeartMuLa 3B, run in its own venv as a subprocess (it needs
-    transformers 4.57, incompatible with ACE-Step's env). Slow on Windows."""
+    """Pro engine: Suno Competition model, run in its own venv as a subprocess
+    (needs its own transformers version, incompatible with ACE-Step's env). Slow on Windows.
+    Lives in C:\\musicforge\\pro — separate from Basic's LoRA folder."""
     import subprocess
     import tempfile
 
     if not HEARTLIB_PY.exists():
-        raise RuntimeError("Pro engine not installed — HeartMuLa venv missing at " + str(HEARTLIB_PY))
-    unload_ace()  # free VRAM for HeartMuLa
+        raise RuntimeError("Pro engine not installed — Suno Competition venv missing at " + str(HEARTLIB_PY))
+    unload_ace()  # free VRAM for the Pro model
     with tempfile.TemporaryDirectory() as td:
         tp, lp = Path(td) / "tags.txt", Path(td) / "lyrics.txt"
         tp.write_text(prompt, encoding="utf-8")
@@ -256,9 +260,132 @@ def generate_song_heartmula(prompt: str, lyrics: str, seconds: int, out_path: Pa
             "--tags-file", str(tp), "--lyrics-file", str(lp),
             "--seconds", str(seconds), "--out", str(out_path),
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5400)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5400, env=env)
         if r.returncode != 0 or not out_path.exists():
             raise RuntimeError("HeartMuLa failed: " + (r.stderr or r.stdout or "")[-400:])
+
+
+def write_mp3(src: Path, dst: Path):
+    import soundfile as sf
+
+    data, sr = sf.read(src)
+    sf.write(dst, data, sr, format="MP3")
+
+
+ACESTEP15_DIR = Path(os.environ.get("ACESTEP15_DIR", r"C:\acestep15"))
+ACESTEP15_PY = ACESTEP15_DIR / ".venv" / "Scripts" / "python.exe"
+ACESTEP15_API_PORT = int(os.environ.get("ACESTEP15_API_PORT", "8001"))
+ACESTEP15_API_URL = f"http://127.0.0.1:{ACESTEP15_API_PORT}"
+
+_acestep15_api_proc = None
+_acestep15_api_lock = threading.Lock()
+
+
+def _acestep15_api_get(path: str, timeout: float = 5):
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(ACESTEP15_API_URL + path, timeout=timeout) as r:
+            return r.status, r.read()
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
+        return None, None
+
+
+def _acestep15_api_post(path: str, payload: dict, timeout: float = 30):
+    import json as _json
+    import urllib.request
+
+    body = _json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        ACESTEP15_API_URL + path, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return _json.loads(r.read())
+
+
+def _ensure_acestep15_api():
+    """Launch ACE-Step 1.5's own persistent API server (keeps the model
+    resident in VRAM/loaded across requests) once, lazily, and reuse it for
+    every Ultra generation. Cold model load only happens on the first call —
+    that's most of Ultra's ~50s/song, so keeping it warm is the real speedup."""
+    import subprocess
+
+    global _acestep15_api_proc
+    status, _ = _acestep15_api_get("/health", timeout=2)
+    if status == 200:
+        return
+    with _acestep15_api_lock:
+        status, _ = _acestep15_api_get("/health", timeout=2)
+        if status == 200:
+            return
+        if _acestep15_api_proc is None or _acestep15_api_proc.poll() is not None:
+            if not ACESTEP15_PY.exists():
+                raise RuntimeError("Ultra engine not installed — ACE-Step 1.5 venv missing at " + str(ACESTEP15_PY))
+            env = {**os.environ, "ACESTEP_API_PORT": str(ACESTEP15_API_PORT), "ACESTEP_OFFLOAD_TO_CPU": "true"}
+            _acestep15_api_proc = subprocess.Popen(
+                [str(ACESTEP15_PY), "-m", "acestep.api_server"],
+                cwd=str(ACESTEP15_DIR), env=env,
+            )
+        for _ in range(180):  # first-ever start includes model load, give it up to 3 min
+            time.sleep(1)
+            status, _ = _acestep15_api_get("/health", timeout=2)
+            if status == 200:
+                return
+        raise RuntimeError("Ultra engine API server didn't come up in time")
+
+
+def generate_song_acestep15(prompt: str, lyrics: str, seconds: int, out_path: Path, instrumental: bool = False):
+    """Ultra engine: ACE-Step 1.5 turbo (8-step) via its own persistent API
+    server (own venv, own torch version — incompatible with ACE-Step v1's
+    env). Model stays loaded between requests instead of a cold subprocess
+    per song, which is where nearly all of the old ~50s/song went.
+
+    Requests 2 candidate takes and keeps the one CLAP scores closer to the
+    prompt — the old CLI wrapper just grabbed whichever file glob() listed
+    first (effectively random), which is why quality felt like a coin flip
+    take to take even though the model itself is solid."""
+    import json as _json
+    import shutil
+    import tempfile
+
+    unload_ace()  # free VRAM for Ultra's own resident model
+    _ensure_acestep15_api()
+    resp = _acestep15_api_post("/release_task", {
+        "prompt": prompt,
+        "lyrics": "" if instrumental else lyrics,
+        "audio_duration": seconds,
+        "audio_format": "wav",
+        "thinking": True,
+        "batch_size": 2,
+    })
+    task_id = resp["data"]["task_id"]
+
+    for _ in range(600):  # up to 10 min
+        time.sleep(1)
+        result = _acestep15_api_post("/query_result", {"task_id_list": [task_id]})
+        entry = result["data"][0]
+        if entry["status"] == 1:
+            files = _json.loads(entry["result"])
+            with tempfile.TemporaryDirectory() as td:
+                candidates = []
+                for i, f in enumerate(files):
+                    status, data = _acestep15_api_get(f["file"], timeout=60)
+                    if status != 200 or not data:
+                        continue
+                    p = Path(td) / f"take{i}.wav"
+                    p.write_bytes(data)
+                    candidates.append(p)
+                if not candidates:
+                    raise RuntimeError("Ultra engine: failed to download generated audio")
+                best = candidates[0] if len(candidates) == 1 else max(candidates, key=lambda p: judge_take(p, prompt))
+                shutil.copy(best, out_path)
+            return
+        if entry["status"] == 2:
+            raise RuntimeError("ACE-Step 1.5 failed: " + str(entry.get("result"))[:400])
+    raise RuntimeError("ACE-Step 1.5 timed out waiting for generation")
 
 
 def _active_lora():
@@ -356,7 +483,15 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
 
         if engine == "pro":
             # HeartMuLa, raw — no style-ref, no director's cut, no mix/master ("just their model")
-            generate_song_heartmula(music_prompt, lyrics or "[instrumental]", seconds, mp3_out)
+            generate_song_heartmula(music_prompt, lyrics or "[instrumental]", seconds, out)
+            write_mp3(out, mp3_out)
+            out.unlink(missing_ok=True)
+            set_track(tid, status="done")
+            return
+
+        if engine == "ultra":
+            # ACE-Step 1.5 turbo, raw — same "just their model" philosophy as Pro
+            generate_song_acestep15(music_prompt, lyrics or "", seconds, mp3_out, instrumental=(mode != "vocal"))
             set_track(tid, status="done")
             return
 
@@ -390,10 +525,7 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
                 pass  # ponytail: mixing is polish — never fail a finished track over it
         master_audio(out)
         # pipeline stays lossless wav; only the final file is mp3 (~10x smaller)
-        import soundfile as sf
-
-        data, sr = sf.read(out)
-        sf.write(mp3_out, data, sr)
+        write_mp3(out, mp3_out)
         out.unlink(missing_ok=True)
         set_track(tid, status="done")
     except Exception as e:  # surfaced in the UI, don't kill the worker
@@ -449,7 +581,7 @@ class GenerateReq(BaseModel):
     lyrics: str = ""     # optional: bring your own, sung as-is
     ref_id: str = ""     # optional: style-reference upload id
     takes: int = 1       # director's cut: generate N takes, keep the judged best
-    engine: str = "basic"  # "basic" = ACE-Step + our mix/master; "pro" = HeartMuLa raw
+    engine: str = "basic"  # "basic" = ACE-Step + our mix/master; "pro" = HeartMuLa raw; "ultra" = ACE-Step 1.5 raw
     seconds: int = 60      # track length, 30-240s
 
 
@@ -473,16 +605,16 @@ def generate(req: GenerateReq):
         raise HTTPException(400, "Prompt required (max 500 chars)")
     if req.mode not in ("instrumental", "vocal"):
         raise HTTPException(400, "mode must be instrumental or vocal")
-    if req.engine not in ("basic", "pro"):
-        raise HTTPException(400, "engine must be basic or pro")
+    if req.engine not in ("basic", "pro", "ultra"):
+        raise HTTPException(400, "engine must be basic, pro, or ultra")
     if len(req.lyrics) > 5000:
         raise HTTPException(400, "Lyrics too long (max 5000 chars)")
     seconds = max(30, min(240, req.seconds))
     tid = uuid.uuid4().hex[:12]
     with db() as c:
         c.execute(
-            "INSERT INTO tracks(id,prompt,genre,mode,lyrics,status,error,created,engine) VALUES(?,?,?,?,?,?,?,?,?)",
-            (tid, prompt, req.genre, req.mode, None, "queued", None, time.time(), req.engine),
+            "INSERT INTO tracks(id,prompt,genre,mode,lyrics,status,error,created,engine,seconds) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (tid, prompt, req.genre, req.mode, None, "queued", None, time.time(), req.engine, seconds),
         )
     pool.submit(run_job, tid, prompt, req.genre, req.mode, req.lyrics.strip(), req.ref_id,
                 max(1, min(3, req.takes)), req.engine, seconds)
@@ -502,8 +634,11 @@ async def upload_reference(file: UploadFile):
     return {"id": rid}
 
 
-STALL_SECONDS = int(os.environ.get("STALL_SECONDS", "600"))          # basic: ~2min real, 10min = dead
-PRO_STALL_SECONDS = int(os.environ.get("PRO_STALL_SECONDS", "5400"))  # pro (HeartMuLa) is much slower
+STALL_SECONDS = int(os.environ.get("STALL_SECONDS", "600"))            # basic: ~2min real, 10min = dead
+PRO_STALL_SECONDS = int(os.environ.get("PRO_STALL_SECONDS", "5400"))    # pro (HeartMuLa) is much slower
+ULTRA_STALL_SECONDS = int(os.environ.get("ULTRA_STALL_SECONDS", "1800"))  # ultra (ACE-Step 1.5) should be fast,
+                                                                           # but give cold model-load real headroom
+ENGINE_STALL = {"basic": STALL_SECONDS, "pro": PRO_STALL_SECONDS, "ultra": ULTRA_STALL_SECONDS}
 
 
 @app.get("/api/tracks")
@@ -511,16 +646,14 @@ def tracks():
     now = time.time()
     stuck = "Yo — this one got stuck and was cut loose. Run it again."
     with db() as c:
-        # watchdog, engine-aware: basic dies at 10min, pro (HeartMuLa) gets 90min
-        c.execute("UPDATE tracks SET status='failed', error=? "
-                  "WHERE status='generating' AND started < ? AND COALESCE(engine,'basic')='basic'",
-                  (stuck, now - STALL_SECONDS))
-        c.execute("UPDATE tracks SET status='failed', error=? "
-                  "WHERE status='generating' AND started < ? AND engine='pro'",
-                  (stuck, now - PRO_STALL_SECONDS))
-        # queued timeout generous, since a slow pro job ahead can hold the queue a while
+        for eng, window in ENGINE_STALL.items():
+            cond = "COALESCE(engine,'basic')=?" if eng == "basic" else "engine=?"
+            c.execute(f"UPDATE tracks SET status='failed', error=? "
+                      f"WHERE status='generating' AND started < ? AND {cond}",
+                      (stuck, now - window, eng))
+        # queued timeout generous, since a slow job ahead can hold the queue a while
         c.execute("UPDATE tracks SET status='failed', error=? WHERE status='queued' AND created < ?",
-                  (stuck, now - 2 * PRO_STALL_SECONDS))
+                  (stuck, now - 2 * max(ENGINE_STALL.values())))
         rows = c.execute("SELECT * FROM tracks ORDER BY created DESC").fetchall()
     return [dict(r) for r in rows]
 
@@ -544,6 +677,10 @@ def audio(tid: str, download: bool = False):
     path = _audio_path(tid)
     if not tid.isalnum() or not path.exists():
         raise HTTPException(404)
+    if download and path.suffix != ".mp3":
+        mp3 = AUDIO_DIR / f"{tid}.mp3"
+        write_mp3(path, mp3)
+        path = mp3
     mime = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
     kw = {"filename": f"musicforge-{tid}{path.suffix}"} if download else {}
     return FileResponse(path, media_type=mime, **kw)

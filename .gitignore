@@ -25,3 +25,14 @@ venv/
 lora_active.txt
 training/*_pid.txt
 tunnel.log
+
+# pro engine — large model weights & vendored repos, download via pro/README.md
+pro/ckpt/
+pro/Muse/
+pro/MuCodec/
+pro/model.safetensors
+pro/smoke/
+
+# scratch test output & logs
+*.wav
+*.log
