@@ -357,7 +357,7 @@ def generate_song_acestep15(prompt: str, lyrics: str, seconds: int, out_path: Pa
         "prompt": prompt,
         "lyrics": "" if instrumental else lyrics,
         "audio_duration": seconds,
-        "audio_format": "wav",
+        "audio_format": "mp3",
         "thinking": True,
         "batch_size": 2,
     })
@@ -386,6 +386,85 @@ def generate_song_acestep15(prompt: str, lyrics: str, seconds: int, out_path: Pa
         if entry["status"] == 2:
             raise RuntimeError("ACE-Step 1.5 failed: " + str(entry.get("result"))[:400])
     raise RuntimeError("ACE-Step 1.5 timed out waiting for generation")
+
+
+STABLEAUDIO_DIR = Path(os.environ.get("STABLEAUDIO_DIR", r"C:\stableaudio"))
+STABLEAUDIO_PY = STABLEAUDIO_DIR / ".venv" / "Scripts" / "python.exe"
+STABLEAUDIO_API_PORT = int(os.environ.get("STABLEAUDIO_API_PORT", "8002"))
+STABLEAUDIO_API_URL = f"http://127.0.0.1:{STABLEAUDIO_API_PORT}"
+
+_stableaudio_api_proc = None
+_stableaudio_api_lock = threading.Lock()
+
+
+def _stableaudio_api_get(path: str, timeout: float = 5):
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(STABLEAUDIO_API_URL + path, timeout=timeout) as r:
+            return r.status, r.read()
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
+        return None, None
+
+
+def _stableaudio_api_post(path: str, payload: dict, timeout: float = 300):
+    import json as _json
+    import urllib.request
+
+    body = _json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        STABLEAUDIO_API_URL + path, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return _json.loads(r.read())
+
+
+def _ensure_stableaudio_api():
+    """Launch Max Test's persistent API server once, lazily, and reuse it —
+    same rationale as Ultra: cold model load is ~60-100s once, then a few
+    seconds per song after that. See stableaudio_server.py."""
+    import subprocess
+
+    global _stableaudio_api_proc
+    status, _ = _stableaudio_api_get("/health", timeout=2)
+    if status == 200:
+        return
+    with _stableaudio_api_lock:
+        status, _ = _stableaudio_api_get("/health", timeout=2)
+        if status == 200:
+            return
+        if _stableaudio_api_proc is None or _stableaudio_api_proc.poll() is not None:
+            if not STABLEAUDIO_PY.exists():
+                raise RuntimeError("Max Test engine not installed — Stable Audio 3 venv missing at " + str(STABLEAUDIO_PY))
+            env = {**os.environ, "STABLEAUDIO_API_PORT": str(STABLEAUDIO_API_PORT)}
+            _stableaudio_api_proc = subprocess.Popen(
+                [str(STABLEAUDIO_PY), str(STABLEAUDIO_DIR / "stableaudio_server.py")],
+                cwd=str(STABLEAUDIO_DIR), env=env,
+            )
+        for _ in range(180):
+            time.sleep(1)
+            status, _ = _stableaudio_api_get("/health", timeout=2)
+            if status == 200:
+                return
+        raise RuntimeError("Max Test engine API server didn't come up in time")
+
+
+def generate_song_stableaudio(prompt: str, seconds: int, out_path: Path):
+    """Max Test engine: Stable Audio 3 Medium, a fast latent-diffusion
+    text-to-audio model from Stability AI — via its own persistent API
+    server (own venv, own torch version). Instrumental only: this model has
+    no lyrics/vocal conditioning at all, unlike Basic/Pro/Ultra."""
+    unload_ace()  # free VRAM for Max Test's own resident model
+    _ensure_stableaudio_api()
+    resp = _stableaudio_api_post("/generate", {
+        "prompt": prompt,
+        "seconds": seconds,
+        "out_path": str(out_path),
+    })
+    if resp.get("status") != "ok":
+        raise RuntimeError("Max Test engine failed: " + str(resp)[:400])
 
 
 def _active_lora():
@@ -468,6 +547,8 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
             takes: int = 1, engine: str = "basic", seconds: int = 60):
     try:
         set_track(tid, status="generating", started=time.time())
+        if engine == "max":
+            mode = "instrumental"  # Stable Audio 3 has no vocal/lyrics conditioning at all
         out = AUDIO_DIR / f"{tid}.wav"
         mp3_out = AUDIO_DIR / f"{tid}.mp3"
         if custom_lyrics and mode == "vocal":
@@ -492,6 +573,14 @@ def run_job(tid: str, prompt: str, genre: str, mode: str, custom_lyrics: str = "
         if engine == "ultra":
             # ACE-Step 1.5 turbo, raw — same "just their model" philosophy as Pro
             generate_song_acestep15(music_prompt, lyrics or "", seconds, mp3_out, instrumental=(mode != "vocal"))
+            set_track(tid, status="done")
+            return
+
+        if engine == "max":
+            # Stable Audio 3 Medium, raw — instrumental only, this model has no vocal conditioning
+            generate_song_stableaudio(music_prompt, seconds, out)
+            write_mp3(out, mp3_out)
+            out.unlink(missing_ok=True)
             set_track(tid, status="done")
             return
 
@@ -581,7 +670,7 @@ class GenerateReq(BaseModel):
     lyrics: str = ""     # optional: bring your own, sung as-is
     ref_id: str = ""     # optional: style-reference upload id
     takes: int = 1       # director's cut: generate N takes, keep the judged best
-    engine: str = "basic"  # "basic" = ACE-Step + our mix/master; "pro" = HeartMuLa raw; "ultra" = ACE-Step 1.5 raw
+    engine: str = "basic"  # "basic" = ACE-Step + our mix/master; "pro" = HeartMuLa raw; "ultra" = ACE-Step 1.5 raw; "max" = Stable Audio 3 raw, instrumental only
     seconds: int = 60      # track length, 30-240s
 
 
@@ -605,8 +694,8 @@ def generate(req: GenerateReq):
         raise HTTPException(400, "Prompt required (max 500 chars)")
     if req.mode not in ("instrumental", "vocal"):
         raise HTTPException(400, "mode must be instrumental or vocal")
-    if req.engine not in ("basic", "pro", "ultra"):
-        raise HTTPException(400, "engine must be basic, pro, or ultra")
+    if req.engine not in ("basic", "pro", "ultra", "max"):
+        raise HTTPException(400, "engine must be basic, pro, ultra, or max")
     if len(req.lyrics) > 5000:
         raise HTTPException(400, "Lyrics too long (max 5000 chars)")
     seconds = max(30, min(240, req.seconds))

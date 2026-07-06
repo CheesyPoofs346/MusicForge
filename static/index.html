@@ -196,12 +196,14 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
   --seg-n:2; --seg-idx:0;
 }
 .seg.three{grid-template-columns:1fr 1fr 1fr}
+.seg.four{grid-template-columns:1fr 1fr 1fr 1fr}
 .seg button{
   position:relative; z-index:1;
   background:transparent; color:var(--muted); border:0; border-radius:.6rem;
   padding:.6rem; font:inherit; font-size:.9rem; font-weight:500; cursor:pointer;
   transition:background .2s, color .2s; min-height:44px;
 }
+.seg button:disabled{opacity:.45; cursor:not-allowed}
 .seg button[aria-pressed="true"]{background:transparent; color:var(--text)}
 .seg small{display:block; font-size:.7rem; font-weight:400; opacity:.75}
 .seg .seg-slider{
@@ -222,8 +224,13 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
   background:linear-gradient(135deg,#8B5CF6,#6366F1);
   box-shadow:0 6px 18px rgba(99,102,241,.26);
 }
+#engine-seg[data-active="max"] .seg-slider{
+  background:linear-gradient(135deg,#22C55E,#84CC16);
+  box-shadow:0 6px 18px rgba(34,197,94,.26);
+}
 #engine-seg button[data-eng="pro"][aria-pressed="true"]{color:#1C1200}
 #engine-seg button[data-eng="ultra"][aria-pressed="true"]{color:#fff}
+#engine-seg button[data-eng="max"][aria-pressed="true"]{color:#0B1F0F}
 .generate{
   width:100%; background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1C1200;
   border:0; border-radius:.9rem; padding:.95rem; font:inherit; font-size:1rem;
@@ -279,6 +286,8 @@ textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
 .badge.pro::before{background:#1C1200}
 .badge.ultra{background:linear-gradient(135deg,#8B5CF6,#6366F1); color:#fff; font-weight:700}
 .badge.ultra::before{background:#fff}
+.badge.max{background:linear-gradient(135deg,#22C55E,#84CC16); color:#0B1F0F; font-weight:700}
+.badge.max::before{background:#0B1F0F}
 
 .player{display:flex; align-items:center; gap:.9rem; margin-top:.75rem}
 .play{
@@ -565,11 +574,12 @@ html{scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent}
       <button type="button" data-sec="180" aria-pressed="false">3 min</button>
     </div>
     <label>Engine</label>
-    <div class="seg three" id="engine-seg" role="group" aria-label="Engine" data-active="basic">
+    <div class="seg four" id="engine-seg" role="group" aria-label="Engine" data-active="basic">
       <span class="seg-slider" aria-hidden="true"></span>
       <button type="button" data-eng="basic" aria-pressed="true">Basic<small>fast &middot; our tuned setup</small></button>
       <button type="button" data-eng="pro" aria-pressed="false">Pro<small>raw &middot; known bugs</small></button>
       <button type="button" data-eng="ultra" aria-pressed="false">Ultra<small>Suno Competition &middot; fast</small></button>
+      <button type="button" data-eng="max" aria-pressed="false">Max Test<small>raw &middot; instrumental only</small></button>
     </div>
     <p class="hint" id="engine-note" style="display:none"></p>
     <details class="pro">
@@ -862,6 +872,7 @@ let seconds = 60, engine = "basic";
 const ENGINE_NOTES = {
   pro: "Pro runs raw, no mix/master — currently experiencing quality bugs we're still tracking down, and much slower (several minutes each). Also skips style-reference and director's cut.",
   ultra: "Ultra runs raw, no mix/master (our Suno Competition engine) — dramatically faster, kept warm on your GPU between tracks. Also skips style-reference and director's cut.",
+  max: "Max Test runs raw, no mix/master — a fast diffusion model, instrumental only (no vocals/lyrics at all). Kept warm on your GPU between tracks. Experimental — still evaluating this one.",
 };
 function ultraEffect(btn){
   if (reduceMotion) return;
@@ -942,6 +953,12 @@ initSegSlider($("#engine-seg"), b => {
   $("#engine-note").textContent = note || "";
   $("#engine-note").style.display = note ? "" : "none";
   if (engine === "ultra") ultraEffect(b);
+
+  // Max Test has no vocal/lyrics conditioning at all — force instrumental
+  const voc = $("#mode-vocal");
+  voc.disabled = engine === "max";
+  voc.title = engine === "max" ? "Max Test is instrumental only" : "";
+  if (engine === "max" && mode === "vocal") $("#mode-inst").click();
 });
 
 function toast(msg){
@@ -1084,6 +1101,7 @@ function progressExpectedSeconds(t){
   const eng = t.engine || t.dataset?.engine;
   if (eng === "pro") return Math.max(240, req * 4);
   if (eng === "ultra") return Math.max(80, req * 1.4);
+  if (eng === "max") return 20;
   return Math.max(120, req * 2);
 }
 function progressForTrack(t){
@@ -1138,6 +1156,7 @@ function trackCard(t){
         <span class="badge ${t.mode==='vocal'?'vocal':''}">${t.mode}</span>
         ${t.engine === "pro" ? `<span class="badge pro">Pro</span>` : ""}
         ${t.engine === "ultra" ? `<span class="badge ultra">Ultra</span>` : ""}
+        ${t.engine === "max" ? `<span class="badge max">Max Test</span>` : ""}
         ${badge}
       </div>
     </div>
@@ -1192,9 +1211,11 @@ async function refresh(){
     const prev = knownStatus[t.id];
     if (prev && prev !== "done" && t.status === "done") {
       confetti();
-      // Ultra is fast enough that "hit play" can just... happen. Skip the click.
-      if (t.engine === "ultra" && !disrupts) { autoOpenId = t.id; toast("Ultra track ready — playing"); }
-      else toast("Track ready — hit play");
+      // Ultra/Max are fast enough that "hit play" can just... happen. Skip the click.
+      if ((t.engine === "ultra" || t.engine === "max") && !disrupts) {
+        autoOpenId = t.id;
+        toast(t.engine === "max" ? "Max Test track ready — playing" : "Ultra track ready — playing");
+      } else toast("Track ready — hit play");
     } else if (prev && prev !== "failed" && t.status === "failed") {
       toast("Yo — that track failed. Run it again.");
       if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
